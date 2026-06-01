@@ -10,7 +10,9 @@ router.post('/register', async (req, res) => {
     email: z.string().email(),
     password: z.string().min(6),
     hospitalName: z.string().min(3),
-    address: z.string().min(5)
+    address: z.string().min(5),
+    lat: z.number().optional(),
+    lng: z.number().optional()
   });
 
   const parsed = schema.safeParse(req.body);
@@ -22,7 +24,14 @@ router.post('/register', async (req, res) => {
       return res.status(409).json({ message: 'Email already in use' });
     }
 
-    const user = new HospitalUser(parsed.data);
+    const userData = {
+      ...parsed.data,
+      location: {
+        type: 'Point',
+        coordinates: [parsed.data.lng || 77.2090, parsed.data.lat || 28.6139] // [longitude, latitude]
+      }
+    };
+    const user = new HospitalUser(userData);
     await user.save();
 
     const token = generateToken(user);

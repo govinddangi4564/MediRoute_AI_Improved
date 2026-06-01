@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Patient } from '../models/patient.js';
 import { io } from '../server.js';
+import { startEmergencyRouting } from '../services/routing.js';
 
 const router = Router();
 
@@ -25,6 +26,12 @@ router.post('/sos', async (req, res) => {
     if (data.fallDetected) symptoms += 'Hard fall detected. ';
     if (data.heartRate > 120 || data.heartRate < 40) symptoms += `Abnormal heart rate: ${data.heartRate} bpm. `;
     
+    // Location fallback to Delhi
+    const defaultLng = 77.2090;
+    const defaultLat = 28.6139;
+    const lng = typeof data.lng === 'number' ? data.lng : defaultLng;
+    const lat = typeof data.lat === 'number' ? data.lat : defaultLat;
+    
     // Save to DB
     const patient = new Patient({
       symptoms,
@@ -33,13 +40,17 @@ router.post('/sos', async (req, res) => {
       emergencyLevel: 'Immediate SOS',
       possibleDisease: data.fallDetected ? 'Trauma / Fall Injury' : 'Cardiac Event',
       department: 'Emergency Medicine',
-      status: 'pending'
+      status: 'pending',
+      location: {
+        type: 'Point',
+        coordinates: [lng, lat]
+      }
     });
     
     await patient.save();
     
-    // Emit real-time event to hospital dashboard
-    io.emit('new_emergency', patient);
+    // Trigger the expanding radius routing system in background
+    startEmergencyRouting(patient._id);
     
     return res.json({ message: 'SOS broadcasted to hospitals successfully', patientId: patient._id });
   } catch (err) {

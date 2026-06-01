@@ -13,7 +13,18 @@ export default function HospitalLogin() {
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
   const router = useRouter();
+
+  // Try to get location on mount
+  useState(() => {
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => console.log("Geolocation error", err)
+      );
+    }
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +34,14 @@ export default function HospitalLogin() {
     const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
     const body = isLogin 
       ? { email, password }
-      : { email, password, hospitalName, address };
+      : { 
+          email, 
+          password, 
+          hospitalName, 
+          address,
+          lat: location?.lat || 28.6139, // Default to Delhi if blocked
+          lng: location?.lng || 77.2090
+        };
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${endpoint}`, {
@@ -41,6 +59,7 @@ export default function HospitalLogin() {
       // Save token and redirect
       localStorage.setItem("hospital_token", data.token);
       localStorage.setItem("hospital_name", data.user.hospitalName);
+      localStorage.setItem("hospital_id", data.user.id);
       
       router.push("/hospital/dashboard");
     } catch (err: any) {

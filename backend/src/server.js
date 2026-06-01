@@ -45,6 +45,11 @@ export const io = new Server(httpServer, {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
+  socket.on('join_hospital_room', (hospitalId) => {
+    console.log(`Hospital ${hospitalId} joined its dedicated room`);
+    socket.join(`hospital_${hospitalId}`);
+  });
+
   socket.on('request_ambulance', (data) => {
     console.log('Ambulance requested to:', data);
     const { targetLat, targetLng } = data;

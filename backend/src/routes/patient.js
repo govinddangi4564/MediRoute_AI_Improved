@@ -5,17 +5,28 @@ import { recommendHospitals } from '../services/maps.js';
 import { Patient } from '../models/patient.js';
 import { io } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { startEmergencyRouting } from '../services/routing.js';
 
 const router = Router();
 
 router.post('/analyze/symptoms', async (req, res) => {
-  const schema = z.object({ text: z.string().min(4), language: z.enum(['en', 'hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa']) });
+  const schema = z.object({
+    text: z.string().min(4),
+    language: z.enum(['en', 'hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa']),
+    lat: z.number().optional(),
+    lng: z.number().optional()
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Invalid symptom payload' });
 
   try {
     const result = await analyzeWithGemini(parsed.data.text, parsed.data.language);
-    
+
+    const defaultLng = 77.2090;
+    const defaultLat = 28.6139;
+    const lng = typeof parsed.data.lng === 'number' ? parsed.data.lng : defaultLng;
+    const lat = typeof parsed.data.lat === 'number' ? parsed.data.lat : defaultLat;
+
     // Save to DB
     const patient = new Patient({
       symptoms: parsed.data.text,
@@ -24,13 +35,17 @@ router.post('/analyze/symptoms', async (req, res) => {
       emergencyLevel: result.emergencyLevel,
       possibleDisease: result.possibleDisease,
       department: result.department,
-      status: 'pending'
+      status: 'pending',
+      location: {
+        type: 'Point',
+        coordinates: [lng, lat]
+      }
     });
     await patient.save();
-    
-    // Emit real-time event to hospital dashboard
-    io.emit('new_emergency', patient);
-    
+
+    // Trigger the expanding radius routing system in background
+    startEmergencyRouting(patient._id);
+
     return res.json({ ...result, patientId: patient._id });
   } catch (err) {
     console.error(err);
@@ -76,10 +91,35 @@ router.post('/hospitals/recommend', async (req, res) => {
 // Dashboard endpoints
 router.get('/dashboard/patients', authenticateToken, async (req, res) => {
   try {
-    const patients = await Patient.find().sort({ createdAt: -1 }).limit(50);
+    const patients = await Patient.find({
+      $or: [
+        { status: 'pending' },
+        { assignedTo: req.user.id }
+      ]
+    }).sort({ createdAt: -1 }).limit(50);
     return res.json(patients);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch patients' });
+  }
+});
+
+// Emergency accept endpoint
+router.post('/emergency/:id/accept', authenticateToken, async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ message: 'Emergency not found' });
+    if (patient.status !== 'pending') return res.status(400).json({ message: 'Emergency already claimed' });
+
+    patient.status = 'assigned';
+    patient.assignedTo = req.user.id;
+    await patient.save();
+
+    // Notify all clients to remove this emergency from their feed (or update status)
+    io.emit('emergency_accepted', { patientId: patient._id, hospitalId: req.user.id });
+
+    return res.json({ message: 'Emergency claimed successfully', patient });
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to claim emergency' });
   }
 });
 

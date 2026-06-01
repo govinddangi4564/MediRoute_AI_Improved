@@ -74,7 +74,14 @@ export default function HospitalDashboard() {
     // Connect socket
     const socket: Socket = io(apiUrl);
 
-    socket.on("connect", () => setIsConnected(true));
+    socket.on("connect", () => {
+      setIsConnected(true);
+      const hospitalId = localStorage.getItem("hospital_id");
+      if (hospitalId) {
+        socket.emit("join_hospital_room", hospitalId);
+      }
+    });
+    
     socket.on("disconnect", () => setIsConnected(false));
 
     socket.on("new_emergency", (patient: Patient) => {
@@ -89,6 +96,17 @@ export default function HospitalDashboard() {
           // Ignore audio errors
         }
       }
+    });
+
+    socket.on("emergency_accepted", ({ patientId, hospitalId: acceptedByHospitalId }) => {
+      const myHospitalId = localStorage.getItem("hospital_id");
+      setPatients((prev) => {
+        if (myHospitalId === acceptedByHospitalId) {
+          return prev.map(p => p._id === patientId ? { ...p, status: 'assigned' } : p);
+        } else {
+          return prev.filter(p => p._id !== patientId);
+        }
+      });
     });
 
     return () => {
@@ -122,6 +140,23 @@ export default function HospitalDashboard() {
       console.error(err);
     } finally {
       setIsUpdatingBeds(false);
+    }
+  };
+
+  const acceptEmergency = async (patientId: string) => {
+    const token = localStorage.getItem("hospital_token");
+    try {
+      const res = await fetch(`${apiUrl}/api/emergency/${patientId}/accept`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      // The socket event will update the UI
+    } catch (err: any) {
+      setError(err.message || "Failed to accept emergency");
     }
   };
 
@@ -244,9 +279,21 @@ export default function HospitalDashboard() {
                   </div>
                   
                   <div className="flex shrink-0 gap-2 w-full md:w-auto mt-2 md:mt-0">
-                    <button className="flex-1 md:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors">
-                      Accept
-                    </button>
+                    {patient.status === 'pending' ? (
+                      <button 
+                        onClick={() => acceptEmergency(patient._id)}
+                        className="flex-1 md:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors"
+                      >
+                        Accept
+                      </button>
+                    ) : (
+                      <button 
+                        disabled
+                        className="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white text-sm font-medium rounded opacity-80 cursor-not-allowed"
+                      >
+                        Accepted
+                      </button>
+                    )}
                     <button className="flex-1 md:flex-none px-4 py-2 bg-white border hover:bg-gray-50 text-gray-700 text-sm font-medium rounded transition-colors">
                       Details
                     </button>

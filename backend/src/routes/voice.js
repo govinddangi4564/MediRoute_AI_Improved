@@ -3,6 +3,7 @@ import twilio from 'twilio';
 import { Patient } from '../models/patient.js';
 import { io } from '../server.js';
 import { analyzeWithGemini } from '../services/gemini.js';
+import { startEmergencyRouting } from '../services/routing.js';
 
 const router = Router();
 const { twiml } = twilio;
@@ -49,7 +50,7 @@ router.post('/analyze', async (req, res) => {
     // Run the transcribed voice through Gemini
     const analysis = await analyzeWithGemini(speechText, 'en');
 
-    // Save the emergency to DB
+    // Save the emergency to DB (Voice calls don't have location, use fallback)
     const patient = new Patient({
       symptoms: speechText,
       language: 'en',
@@ -57,13 +58,17 @@ router.post('/analyze', async (req, res) => {
       emergencyLevel: analysis.emergencyLevel,
       possibleDisease: analysis.possibleDisease,
       department: analysis.department,
-      status: 'pending'
+      status: 'pending',
+      location: {
+        type: 'Point',
+        coordinates: [77.2090, 28.6139] // Fallback to Delhi
+      }
     });
     
     await patient.save();
     
-    // Broadcast instantly to Hospital Dashboard
-    io.emit('new_emergency', patient);
+    // Trigger the expanding radius routing system in background
+    startEmergencyRouting(patient._id);
 
     // Tell the caller what happened
     response.say({ voice: 'Polly.Aditi' }, 
@@ -91,10 +96,14 @@ router.post('/test-call', async (req, res) => {
       emergencyLevel: 'Cardiac Emergency',
       possibleDisease: 'Myocardial Infarction',
       department: 'Cardiology / ER',
-      status: 'pending'
+      status: 'pending',
+      location: {
+        type: 'Point',
+        coordinates: [77.2090, 28.6139] // Fallback to Delhi
+      }
     });
     await patient.save();
-    io.emit('new_emergency', patient);
+    startEmergencyRouting(patient._id);
     return res.json({ message: "Mock success" });
   } catch (err) {
     return res.status(500).json({ message: 'Error' });
