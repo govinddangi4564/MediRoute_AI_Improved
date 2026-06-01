@@ -1,0 +1,9 @@
+{
+  "name": "Mediroute AI",
+  "short_name": "Mediroute",
+  "description": "AI-assisted emergency triage and hospital routing",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF7F0",
+  "theme_color": "#1B2424"
+}

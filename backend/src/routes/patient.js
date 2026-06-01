@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { analyzeReportsWithGemini, analyzeWithGemini } from '../services/gemini.js';
 import { recommendHospitals } from '../services/maps.js';
+import { Patient } from '../models/patient.js';
+import { io } from '../server.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -12,8 +15,25 @@ router.post('/analyze/symptoms', async (req, res) => {
 
   try {
     const result = await analyzeWithGemini(parsed.data.text, parsed.data.language);
-    return res.json(result);
-  } catch {
+    
+    // Save to DB
+    const patient = new Patient({
+      symptoms: parsed.data.text,
+      language: parsed.data.language,
+      severity: result.severity,
+      emergencyLevel: result.emergencyLevel,
+      possibleDisease: result.possibleDisease,
+      department: result.department,
+      status: 'pending'
+    });
+    await patient.save();
+    
+    // Emit real-time event to hospital dashboard
+    io.emit('new_emergency', patient);
+    
+    return res.json({ ...result, patientId: patient._id });
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: 'Symptom analysis failed' });
   }
 });
@@ -50,6 +70,16 @@ router.post('/hospitals/recommend', async (req, res) => {
     return res.json(result);
   } catch {
     return res.status(500).json({ message: 'Hospital recommendation failed' });
+  }
+});
+
+// Dashboard endpoints
+router.get('/dashboard/patients', authenticateToken, async (req, res) => {
+  try {
+    const patients = await Patient.find().sort({ createdAt: -1 }).limit(50);
+    return res.json(patients);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to fetch patients' });
   }
 });
 

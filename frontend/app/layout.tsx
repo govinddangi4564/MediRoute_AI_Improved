@@ -7,6 +7,7 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 export const metadata: Metadata = {
   title: "MediRoute AI - Emergency Health Assistant",
   description: "AI-powered emergency triage and hospital routing. Get instant health guidance in Hindi or English.",
+  manifest: "/manifest.json",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

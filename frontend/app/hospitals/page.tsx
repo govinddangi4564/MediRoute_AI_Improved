@@ -6,6 +6,7 @@ import { AlertTriangle, Building2, Clock, ExternalLink, LocateFixed, MapPin, Pho
 import { getHospitalRecommendations } from "@/lib/api";
 import { AnalysisResult, HospitalRecommendation } from "@/types";
 import { useLang } from "@/contexts/LanguageContext";
+import AmbulanceTracking from "./ambulance-tracking";
 
 function EmptyState({ message }: { message: string }) {
   const { t } = useLang();
@@ -238,11 +239,18 @@ export default function HospitalsPage() {
             })}
           </div>
 
-          <div className="h-[320px] overflow-hidden border border-[var(--line)] bg-[#f4efe5] md:h-[360px] lg:sticky lg:top-[76px]">
-            {mapUrl ? (
-              <iframe key={mapUrl} title="Hospital route map" src={mapUrl} className="h-full w-full border-0" loading="lazy" />
-            ) : (
-              <div className="flex h-full min-h-[430px] items-center justify-center text-[14px] text-[var(--muted)]">{t("hospitals.mapUnavailable")}</div>
+          <div className="flex flex-col gap-5">
+            <div className="h-[320px] overflow-hidden border border-[var(--line)] bg-[#f4efe5] md:h-[360px] lg:sticky lg:top-[76px]">
+              {mapUrl ? (
+                <iframe key={mapUrl} title="Hospital route map" src={mapUrl} className="h-full w-full border-0" loading="lazy" />
+              ) : (
+                <div className="flex h-full min-h-[430px] items-center justify-center text-[14px] text-[var(--muted)]">{t("hospitals.mapUnavailable")}</div>
+              )}
+            </div>
+            {selectedHospital && (
+              <div className="lg:sticky lg:top-[460px]">
+                <AmbulanceTracking targetLat={selectedHospital.lat} targetLng={selectedHospital.lng} />
+              </div>
             )}
           </div>
         </div>

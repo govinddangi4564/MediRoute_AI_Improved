@@ -12,6 +12,7 @@ import {
   PhoneCall,
   ShieldCheck,
   Stethoscope,
+  Activity
 } from "lucide-react";
 import { useLang } from "@/contexts/LanguageContext";
 
@@ -48,6 +49,40 @@ const workflow = [
 
 export default function HomePage() {
   const { t } = useLang();
+  
+  const testWearableSOS = async () => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/wearable/sos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceType: "Apple Watch Series 9",
+          heartRate: 190,
+          fallDetected: true,
+          lat: 28.7041,
+          lng: 77.1025
+        })
+      });
+      if (res.ok) {
+        alert("Mock SOS sent successfully! Check the Hospital Dashboard.");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const testPhoneCall = async () => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/voice/test-call`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        alert("Mock phone call received! Emergency alert sent to the dashboard.");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
     <main className="bg-[var(--cream)] text-[var(--ink)]">
@@ -85,6 +120,18 @@ export default function HomePage() {
               </Link>
               <Link href="/upload" className="btn btn-soft" id="hero-cta-upload">
                 {t("home.cta.upload")}
+              </Link>
+              <button onClick={testWearableSOS} className="btn bg-red-600 text-white hover:bg-red-700 font-bold border-red-700">
+                <Activity size={16} /> Test Wearable SOS
+              </button>
+              <button onClick={testPhoneCall} className="btn bg-blue-600 text-white hover:bg-blue-700 font-bold border-blue-700">
+                <PhoneCall size={16} /> Test Phone Call
+              </button>
+            </div>
+            
+            <div className="mt-4">
+              <Link href="/hospital/dashboard" className="text-[var(--accent)] hover:underline font-medium flex items-center gap-1 text-sm bg-white/20 px-3 py-2 inline-flex rounded-lg border border-[var(--accent-muted)]">
+                🏥 Open Hospital Command Center Dashboard
               </Link>
             </div>
 
