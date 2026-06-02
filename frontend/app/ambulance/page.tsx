@@ -4,10 +4,18 @@ import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { Navigation, CheckCircle2, AlertTriangle, Truck } from "lucide-react";
+import dynamic from "next/dynamic";
+
+const MapComponent = dynamic(() => import("../hospitals/map-component"), { ssr: false });
 
 export default function AmbulanceDriverView() {
   const searchParams = useSearchParams();
   const patientId = searchParams.get("patientId");
+  const targetLatParam = searchParams.get("targetLat");
+  const targetLngParam = searchParams.get("targetLng");
+  
+  const targetLat = targetLatParam ? parseFloat(targetLatParam) : null;
+  const targetLng = targetLngParam ? parseFloat(targetLngParam) : null;
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isDriving, setIsDriving] = useState(false);
@@ -176,6 +184,18 @@ export default function AmbulanceDriverView() {
           </div>
         )}
       </div>
+
+      {/* Map Section for Driver */}
+      {location && targetLat && targetLng && !arrived && (
+        <div className="w-full max-w-md mt-6 h-80 rounded-2xl overflow-hidden border shadow-xl relative bg-gray-100">
+          <MapComponent 
+            targetLat={targetLat} 
+            targetLng={targetLng} 
+            ambLat={location.lat} 
+            ambLng={location.lng} 
+          />
+        </div>
+      )}
     </div>
   );
 }

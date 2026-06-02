@@ -12,7 +12,8 @@ const patientSchema = new mongoose.Schema({
     coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
   },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser' },
-  status: { type: String, enum: ['pending', 'assigned', 'resolved'], default: 'pending' },
+  requestedHospital: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser' },
+  status: { type: String, enum: ['draft', 'pending', 'assigned', 'resolved'], default: 'draft' },
   createdAt: { type: Date, default: Date.now }
 });
 

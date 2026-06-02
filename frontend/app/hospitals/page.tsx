@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Building2, Clock, ExternalLink, LocateFixed, MapPin, PhoneCall, Star } from "lucide-react";
-import { getHospitalRecommendations } from "@/lib/api";
+import { getHospitalRecommendations, requestAmbulance } from "@/lib/api";
 import { AnalysisResult, HospitalRecommendation } from "@/types";
 import { useLang } from "@/contexts/LanguageContext";
 import AmbulanceTracking from "./ambulance-tracking";
@@ -63,6 +63,10 @@ export default function HospitalsPage() {
   const [selectedId, setSelectedId] = useState("");
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState("");
+  const [isAmbulanceRequested, setIsAmbulanceRequested] = useState(false);
+  const [isRequesting, setIsRequesting] = useState(false);
+
+  const analysisResult = useMemo(() => parseSavedJson<AnalysisResult>("lifelineAnalysis"), []);
 
   useEffect(() => {
     const savedAnalysis = parseSavedJson<AnalysisResult>("lifelineAnalysis");
@@ -118,6 +122,22 @@ export default function HospitalsPage() {
     [best, hospitals, selectedId]
   );
   const mapUrl = selectedHospital ? googleMapsRouteEmbedUrl(selectedHospital, currentLocation) : "";
+
+  const handleRequestAmbulance = async () => {
+    if (!analysisResult?.patientId || !selectedHospital) return;
+    
+    setIsRequesting(true);
+    try {
+      await requestAmbulance(analysisResult.patientId, selectedHospital.id);
+      
+      setIsAmbulanceRequested(true);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to request ambulance. Please try calling 112 instead.");
+    } finally {
+      setIsRequesting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -247,9 +267,25 @@ export default function HospitalsPage() {
                 <div className="flex h-full min-h-[430px] items-center justify-center text-[14px] text-[var(--muted)]">{t("hospitals.mapUnavailable")}</div>
               )}
             </div>
-            {selectedHospital && (
+            {selectedHospital && analysisResult?.patientId && (
               <div className="lg:sticky lg:top-[460px]">
-                <AmbulanceTracking targetLat={selectedHospital.lat} targetLng={selectedHospital.lng} />
+                {!isAmbulanceRequested ? (
+                  <div className="border bg-white rounded-xl shadow-sm p-6 text-center mt-4">
+                    <h3 className="font-semibold text-lg mb-2 text-gray-800">Need an Emergency Ambulance?</h3>
+                    <p className="text-sm text-gray-500 mb-5">
+                      Send a request to {selectedHospital.name} and track the live location of your driver.
+                    </p>
+                    <button 
+                      onClick={handleRequestAmbulance} 
+                      disabled={isRequesting}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                    >
+                      <AlertTriangle size={18} /> {isRequesting ? "Requesting..." : "Request Ambulance"}
+                    </button>
+                  </div>
+                ) : (
+                  <AmbulanceTracking targetLat={selectedHospital.lat} targetLng={selectedHospital.lng} />
+                )}
               </div>
             )}
           </div>

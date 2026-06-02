@@ -14,6 +14,9 @@ interface Patient {
   department: string;
   status: string;
   createdAt: string;
+  location?: {
+    coordinates: [number, number];
+  };
 }
 
 export default function HospitalDashboard() {
@@ -295,7 +298,7 @@ export default function HospitalDashboard() {
                           Accepted
                         </button>
                         <a 
-                          href={`/ambulance?patientId=${patient._id}`} 
+                          href={`/ambulance?patientId=${patient._id}${patient.location ? `&targetLat=${patient.location.coordinates[1]}&targetLng=${patient.location.coordinates[0]}` : ''}`} 
                           target="_blank" 
                           rel="noreferrer"
                           className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-1"

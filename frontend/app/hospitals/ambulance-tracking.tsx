@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import { MapPin, Navigation, CheckCircle2 } from "lucide-react";
+import { Navigation, CheckCircle2 } from "lucide-react";
+import dynamic from "next/dynamic";
+
+const MapComponent = dynamic(() => import("./map-component"), { ssr: false });
 
 interface AmbulanceTrackingProps {
   targetLat: number;
@@ -79,38 +82,16 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
         )}
       </div>
 
-      <div className="bg-gray-100 rounded-lg h-64 flex items-center justify-center relative overflow-hidden mb-4 border">
-        {/* Placeholder for actual Google Map. In a real app, use @react-google-maps/api */}
-        <div className="absolute inset-0 bg-[#e5e3df] opacity-50 bg-[url('https://maps.gstatic.com/mapfiles/transparent.png')]"></div>
-        
-        {/* Destination Marker */}
-        <div className="absolute" style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-          <MapPin size={32} className="text-red-600 drop-shadow-md" />
-        </div>
-
-        {/* Ambulance Marker */}
-        {!arrived && dispatched && ambLat && ambLng && (
-          <div 
-            className="absolute transition-all duration-1000 ease-linear"
-            style={{ 
-              // Simple mapping from lat/lng diff to percentage for mock UI
-              top: `${Math.max(5, Math.min(95, 50 + (targetLat - ambLat) * 1000))}%`, 
-              left: `${Math.max(5, Math.min(95, 50 + (ambLng - targetLng) * 1000))}%`,
-              transform: 'translate(-50%, -50%)'
-            }}
-          >
-            <div className="bg-white p-2 rounded-full shadow-lg border-2 border-blue-500 relative">
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-              </span>
-              <Navigation size={20} className="text-blue-600 transform rotate-45" />
-            </div>
-          </div>
-        )}
+      <div className="bg-gray-100 rounded-lg h-80 flex items-center justify-center relative overflow-hidden mb-4 border">
+        <MapComponent 
+          targetLat={targetLat} 
+          targetLng={targetLng} 
+          ambLat={ambLat} 
+          ambLng={ambLng} 
+        />
         
         {arrived && (
-          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center">
+          <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-50">
             <CheckCircle2 size={48} className="text-green-500 mb-2" />
             <p className="font-semibold text-gray-800 text-lg">Ambulance has arrived!</p>
           </div>

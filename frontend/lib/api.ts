@@ -56,3 +56,10 @@ export async function getHospitalRecommendations(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+export async function requestAmbulance(patientId: string, hospitalId: string): Promise<any> {
+  return apiRequest(`/emergency/${patientId}/request`, {
+    method: 'POST',
+    body: JSON.stringify({ hospitalId })
+  });
+}

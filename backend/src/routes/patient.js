@@ -35,16 +35,13 @@ router.post('/analyze/symptoms', async (req, res) => {
       emergencyLevel: result.emergencyLevel,
       possibleDisease: result.possibleDisease,
       department: result.department,
-      status: 'pending',
+      status: 'draft',
       location: {
         type: 'Point',
         coordinates: [lng, lat]
       }
     });
     await patient.save();
-
-    // Trigger the expanding radius routing system in background
-    startEmergencyRouting(patient._id);
 
     return res.json({ ...result, patientId: patient._id });
   } catch (err) {
@@ -100,6 +97,26 @@ router.get('/dashboard/patients', authenticateToken, async (req, res) => {
     return res.json(patients);
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch patients' });
+  }
+});
+
+// Explicit request for ambulance
+router.post('/emergency/:id/request', async (req, res) => {
+  try {
+    const { hospitalId } = req.body;
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ message: 'Patient not found' });
+    
+    patient.status = 'pending';
+    await patient.save();
+
+    // Auto-route to nearby registered hospital dashboards
+    startEmergencyRouting(patient._id);
+
+    return res.json({ message: 'Ambulance requested successfully', patient });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to request ambulance' });
   }
 });
 

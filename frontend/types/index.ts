@@ -9,6 +9,7 @@ export interface AnalysisResult {
   recommendations: string[];
   firstAid: string[];
   department: string;
+  patientId?: string;
 }
 
 export interface HospitalRecommendation {
