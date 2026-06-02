@@ -116,6 +116,7 @@ router.post('/emergency/:id/accept', authenticateToken, async (req, res) => {
 
     // Notify all clients to remove this emergency from their feed (or update status)
     io.emit('emergency_accepted', { patientId: patient._id, hospitalId: req.user.id });
+    io.to(`patient_${patient._id}`).emit('ambulance_dispatched');
 
     return res.json({ message: 'Emergency claimed successfully', patient });
   } catch (err) {

@@ -50,34 +50,20 @@ io.on('connection', (socket) => {
     socket.join(`hospital_${hospitalId}`);
   });
 
-  socket.on('request_ambulance', (data) => {
-    console.log('Ambulance requested to:', data);
-    const { targetLat, targetLng } = data;
-    
-    // Simulate ambulance starting 5km away
-    let currentLat = targetLat - 0.05;
-    let currentLng = targetLng - 0.05;
-    
-    const interval = setInterval(() => {
-      // Move 5% of the remaining distance per tick
-      const latDiff = targetLat - currentLat;
-      const lngDiff = targetLng - currentLng;
-      
-      currentLat += latDiff * 0.05;
-      currentLng += lngDiff * 0.05;
-      
-      socket.emit('ambulance_location', { lat: currentLat, lng: currentLng });
-      
-      // Stop when very close
-      if (Math.abs(latDiff) < 0.001 && Math.abs(lngDiff) < 0.001) {
-        clearInterval(interval);
-        socket.emit('ambulance_arrived');
-      }
-    }, 2000); // update every 2 seconds
-    
-    socket.on('disconnect', () => {
-      clearInterval(interval);
-    });
+  socket.on('join_patient_room', (patientId) => {
+    console.log(`Patient ${patientId} joined tracking room`);
+    socket.join(`patient_${patientId}`);
+  });
+
+  // From ambulance driver app
+  socket.on('update_ambulance_location', (data) => {
+    const { patientId, lat, lng } = data;
+    io.to(`patient_${patientId}`).emit('ambulance_location', { lat, lng });
+  });
+
+  // From ambulance driver app
+  socket.on('ambulance_arrived', (patientId) => {
+    io.to(`patient_${patientId}`).emit('ambulance_arrived');
   });
 
   socket.on('disconnect', () => {

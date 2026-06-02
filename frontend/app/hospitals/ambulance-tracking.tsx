@@ -13,6 +13,7 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
   const [ambLat, setAmbLat] = useState<number | null>(null);
   const [ambLng, setAmbLng] = useState<number | null>(null);
   const [arrived, setArrived] = useState(false);
+  const [dispatched, setDispatched] = useState(false);
   const [distance, setDistance] = useState(5.0);
 
   useEffect(() => {
@@ -20,7 +21,19 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
     const socket: Socket = io(apiUrl);
 
     socket.on("connect", () => {
-      socket.emit("request_ambulance", { targetLat, targetLng });
+      const savedAnalysis = localStorage.getItem("lifelineAnalysis");
+      if (savedAnalysis) {
+        try {
+          const parsed = JSON.parse(savedAnalysis);
+          if (parsed.patientId) {
+            socket.emit("join_patient_room", parsed.patientId);
+          }
+        } catch (e) {}
+      }
+    });
+
+    socket.on("ambulance_dispatched", () => {
+      setDispatched(true);
     });
 
     socket.on("ambulance_location", (data: { lat: number; lng: number }) => {
@@ -55,9 +68,13 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
           <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full flex items-center gap-1">
             <CheckCircle2 size={16} /> Arrived
           </span>
-        ) : (
+        ) : dispatched ? (
           <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded-full animate-pulse">
             En Route
+          </span>
+        ) : (
+          <span className="px-3 py-1 bg-yellow-100 text-yellow-700 text-sm font-medium rounded-full animate-pulse">
+            Waiting for Dispatch
           </span>
         )}
       </div>
@@ -72,13 +89,13 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
         </div>
 
         {/* Ambulance Marker */}
-        {!arrived && ambLat && ambLng && (
+        {!arrived && dispatched && ambLat && ambLng && (
           <div 
             className="absolute transition-all duration-1000 ease-linear"
             style={{ 
               // Simple mapping from lat/lng diff to percentage for mock UI
-              top: `${50 + (targetLat - ambLat) * 1000}%`, 
-              left: `${50 + (ambLng - targetLng) * 1000}%`,
+              top: `${Math.max(5, Math.min(95, 50 + (targetLat - ambLat) * 1000))}%`, 
+              left: `${Math.max(5, Math.min(95, 50 + (ambLng - targetLng) * 1000))}%`,
               transform: 'translate(-50%, -50%)'
             }}
           >
@@ -100,7 +117,7 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
         )}
       </div>
 
-      {!arrived && (
+      {!arrived && dispatched && (
         <div className="flex justify-between items-center bg-blue-50 p-3 rounded-lg border border-blue-100">
           <div>
             <p className="text-sm text-gray-500">Estimated Distance</p>

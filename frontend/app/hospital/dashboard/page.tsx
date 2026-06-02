@@ -287,12 +287,22 @@ export default function HospitalDashboard() {
                         Accept
                       </button>
                     ) : (
-                      <button 
-                        disabled
-                        className="flex-1 md:flex-none px-4 py-2 bg-green-600 text-white text-sm font-medium rounded opacity-80 cursor-not-allowed"
-                      >
-                        Accepted
-                      </button>
+                      <div className="flex flex-col gap-2 min-w-[120px]">
+                        <button 
+                          disabled
+                          className="w-full px-4 py-2 bg-green-600 text-white text-sm font-medium rounded opacity-80 cursor-not-allowed"
+                        >
+                          Accepted
+                        </button>
+                        <a 
+                          href={`/ambulance?patientId=${patient._id}`} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-1"
+                        >
+                          Driver View
+                        </a>
+                      </div>
                     )}
                     <button className="flex-1 md:flex-none px-4 py-2 bg-white border hover:bg-gray-50 text-gray-700 text-sm font-medium rounded transition-colors">
                       Details
