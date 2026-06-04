@@ -4,10 +4,13 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { connectDb } from './config/db.js';
+import { Patient } from './models/patient.js';
+import { AmbulanceDriver } from './models/ambulanceDriver.js';
 import patientRoutes from './routes/patient.js';
 import wearableRoutes from './routes/wearable.js';
 import voiceRoutes from './routes/voice.js';
 import authRoutes from './routes/auth.js';
+import ambulanceRoutes from './routes/ambulance.js';
 
 dotenv.config();
 
@@ -55,6 +58,11 @@ io.on('connection', (socket) => {
     socket.join(`patient_${patientId}`);
   });
 
+  socket.on('join_driver_room', (driverId) => {
+    console.log(`Driver ${driverId} joined driver room`);
+    socket.join(`driver_${driverId}`);
+  });
+
   // From ambulance driver app
   socket.on('update_ambulance_location', (data) => {
     const { patientId, lat, lng } = data;
@@ -62,8 +70,19 @@ io.on('connection', (socket) => {
   });
 
   // From ambulance driver app
-  socket.on('ambulance_arrived', (patientId) => {
+  socket.on('ambulance_arrived', async (patientId) => {
     io.to(`patient_${patientId}`).emit('ambulance_arrived');
+    
+    // Free the driver
+    try {
+      const patient = await Patient.findById(patientId);
+      if (patient && patient.assignedAmbulance) {
+        await AmbulanceDriver.findByIdAndUpdate(patient.assignedAmbulance, { isAvailable: true });
+        // Optional: you could mark the patient as 'resolved' or 'arrived' here
+      }
+    } catch (err) {
+      console.error('Error freeing driver:', err);
+    }
   });
 
   socket.on('disconnect', () => {
@@ -80,6 +99,7 @@ app.use('/api', patientRoutes);
 app.use('/api/wearable', wearableRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/ambulance', ambulanceRoutes);
 
 connectDb();
 

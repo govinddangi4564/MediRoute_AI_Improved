@@ -1,37 +1,81 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
-import { Navigation, CheckCircle2, AlertTriangle, Truck } from "lucide-react";
+import { Navigation, CheckCircle2, AlertTriangle, Truck, MapPin, Activity, LogOut } from "lucide-react";
 import dynamic from "next/dynamic";
+import { playAlertSound } from "@/lib/utils";
 
 const MapComponent = dynamic(() => import("../hospitals/map-component"), { ssr: false });
 
+interface Mission {
+  _id: string;
+  symptoms: string;
+  severity: string;
+  emergencyLevel: string;
+  location?: { coordinates: [number, number] };
+  requestedHospital?: { hospitalName: string };
+  createdAt: string;
+}
+
 export default function AmbulanceDriverView() {
-  const searchParams = useSearchParams();
-  const patientId = searchParams.get("patientId");
-  const targetLatParam = searchParams.get("targetLat");
-  const targetLngParam = searchParams.get("targetLng");
-  
-  const targetLat = targetLatParam ? parseFloat(targetLatParam) : null;
-  const targetLng = targetLngParam ? parseFloat(targetLngParam) : null;
+  const router = useRouter();
 
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [mission, setMission] = useState<Mission | null>(null);
+  const [driverName, setDriverName] = useState("");
+  
   const [isDriving, setIsDriving] = useState(false);
   const [arrived, setArrived] = useState(false);
   const [error, setError] = useState("");
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
   useEffect(() => {
-    if (!patientId) {
-      setError("No patient ID provided in URL.");
+    const token = localStorage.getItem("driver_token");
+    const driverId = localStorage.getItem("driver_id");
+    if (!token || !driverId) {
+      router.push("/ambulance/login");
       return;
     }
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+    setDriverName(localStorage.getItem("driver_name") || "Driver");
+
+    // Fetch active mission
+    fetch(`${apiUrl}/api/ambulance/mission`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Session expired");
+        return res.json();
+      })
+      .then(data => {
+        if (data && data._id) {
+          setMission(data);
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem("driver_token");
+        router.push("/ambulance/login");
+      });
+
     const newSocket = io(apiUrl);
     setSocket(newSocket);
+
+    newSocket.on("connect", () => {
+      newSocket.emit("join_driver_room", driverId);
+    });
+
+    newSocket.on("new_mission", (newMission: Mission) => {
+      setMission(newMission);
+      setArrived(false);
+      
+      // Play alert sound for new mission
+      playAlertSound();
+    });
 
     return () => {
       newSocket.disconnect();
@@ -39,14 +83,13 @@ export default function AmbulanceDriverView() {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, [patientId]);
+  }, [apiUrl, router]);
 
   const startDriving = () => {
     if (!navigator.geolocation) {
       setError("Geolocation is not supported by your browser");
       return;
     }
-
     setIsDriving(true);
     setError("");
 
@@ -55,9 +98,9 @@ export default function AmbulanceDriverView() {
         const { latitude, longitude } = position.coords;
         setLocation({ lat: latitude, lng: longitude });
 
-        if (socket && patientId) {
+        if (socket && mission) {
           socket.emit("update_ambulance_location", {
-            patientId,
+            patientId: mission._id,
             lat: latitude,
             lng: longitude,
           });
@@ -80,108 +123,140 @@ export default function AmbulanceDriverView() {
   };
 
   const markArrived = () => {
-    if (socket && patientId) {
-      socket.emit("ambulance_arrived", patientId);
+    if (socket && mission) {
+      socket.emit("ambulance_arrived", mission._id);
       setArrived(true);
       stopDriving();
+      // Optional: Clear mission after some time or let backend clear it
     }
   };
 
-  if (!patientId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="bg-white p-6 rounded-xl shadow text-center max-w-sm w-full">
-          <AlertTriangle className="mx-auto text-red-500 mb-4" size={48} />
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Invalid Link</h2>
-          <p className="text-gray-500 text-sm">Please make sure you accessed this page from the Hospital Dashboard dispatch link.</p>
-        </div>
-      </div>
-    );
-  }
+  const handleLogout = () => {
+    localStorage.removeItem("driver_token");
+    localStorage.removeItem("driver_id");
+    router.push("/ambulance/login");
+  };
+
+  const targetLat = mission?.location?.coordinates[1] || null;
+  const targetLng = mission?.location?.coordinates[0] || null;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 pt-12">
+      <div className="w-full max-w-md flex justify-between items-center mb-6">
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <Truck className="text-red-600" />
+          Hi, {driverName}
+        </h1>
+        <button onClick={handleLogout} className="text-gray-500 hover:text-red-600 p-2">
+          <LogOut size={20} />
+        </button>
+      </div>
+
       <div className="bg-white border rounded-2xl p-6 shadow-xl max-w-md w-full">
-        <div className="flex items-center gap-3 mb-6 pb-4 border-b">
-          <div className="bg-red-100 p-3 rounded-full text-red-600">
-            <Truck size={28} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Driver Dashboard</h1>
-            <p className="text-sm text-gray-500">Broadcasting live location to patient</p>
-          </div>
-        </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm flex items-start gap-2">
-            <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
-            <p>{error}</p>
-          </div>
-        )}
-
-        {arrived ? (
-          <div className="text-center py-8">
-            <div className="bg-green-100 text-green-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 size={40} />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Mission Complete</h2>
-            <p className="text-gray-500">You have successfully arrived at the destination.</p>
+        {!mission ? (
+          <div className="text-center py-10">
+            <Activity className="mx-auto text-gray-300 mb-4 animate-pulse" size={48} />
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Standby</h2>
+            <p className="text-gray-500 text-sm">Waiting for hospital dispatch...</p>
           </div>
         ) : (
-          <div className="space-y-6">
-            <div className="bg-gray-50 rounded-xl p-4 border flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 mb-1">Status</p>
-                <p className="font-semibold flex items-center gap-2">
-                  {isDriving ? (
-                    <span className="text-blue-600 flex items-center gap-2">
-                      <span className="relative flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                      </span>
-                      Broadcasting Location
-                    </span>
-                  ) : (
-                    <span className="text-gray-600">Standby</span>
-                  )}
-                </p>
+          <>
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b">
+              <div className="bg-red-100 p-3 rounded-full text-red-600">
+                <AlertTriangle size={28} />
               </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-500 mb-1">Coordinates</p>
-                <p className="font-mono text-xs text-gray-700">
-                  {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "Unknown"}
-                </p>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">New Mission</h2>
+                <p className="text-sm text-red-600 font-semibold">{mission.emergencyLevel}</p>
               </div>
             </div>
 
-            <div className="grid gap-3">
-              {!isDriving ? (
-                <button
-                  onClick={startDriving}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-lg"
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm flex items-start gap-2">
+                <AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />
+                <p>{error}</p>
+              </div>
+            )}
+
+            {arrived ? (
+              <div className="text-center py-8">
+                <div className="bg-green-100 text-green-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 size={40} />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Mission Complete</h2>
+                <p className="text-gray-500">You have successfully arrived at the destination.</p>
+                <button 
+                  onClick={() => { setMission(null); setArrived(false); }}
+                  className="mt-6 text-red-600 hover:underline font-medium"
                 >
-                  <Navigation size={20} />
-                  Start Driving
+                  Return to Standby
                 </button>
-              ) : (
-                <>
-                  <button
-                    onClick={markArrived}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-lg"
-                  >
-                    <CheckCircle2 size={24} />
-                    Mark as Arrived
-                  </button>
-                  <button
-                    onClick={stopDriving}
-                    className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-xl transition-all"
-                  >
-                    Pause Broadcasting
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-gray-50 rounded-xl p-4 border text-sm space-y-3">
+                  <div>
+                    <span className="text-gray-500 block mb-0.5">Patient Details</span>
+                    <span className="font-medium text-gray-900">{mission.symptoms}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500 block mb-0.5">Destination</span>
+                    <span className="font-medium text-gray-900 flex items-center gap-1">
+                      <MapPin size={14} className="text-red-500" />
+                      Lat: {targetLat?.toFixed(4)}, Lng: {targetLng?.toFixed(4)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl p-4 border flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">Status</p>
+                    <p className="font-semibold flex items-center gap-2">
+                      {isDriving ? (
+                        <span className="text-blue-600 flex items-center gap-2">
+                          <span className="relative flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                          </span>
+                          Broadcasting Location
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">Pending Start</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3">
+                  {!isDriving ? (
+                    <button
+                      onClick={startDriving}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-lg"
+                    >
+                      <Navigation size={20} />
+                      Start Driving
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={markArrived}
+                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-lg"
+                      >
+                        <CheckCircle2 size={24} />
+                        Mark as Arrived
+                      </button>
+                      <button
+                        onClick={stopDriving}
+                        className="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 rounded-xl transition-all"
+                      >
+                        Pause Broadcasting
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -5,6 +5,7 @@ import { analyzeReportsWithGemini, analyzeWithGemini } from '../services/gemini.
 import { recommendHospitals } from '../services/maps.js';
 import { Patient } from '../models/patient.js';
 import { HospitalUser } from '../models/hospitalUser.js';
+import { AmbulanceDriver } from '../models/ambulanceDriver.js';
 import { io } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { startEmergencyRouting } from '../services/routing.js';
@@ -99,16 +100,8 @@ router.post('/hospitals/recommend', async (req, res) => {
   try {
     const { lat, lng, department, severity } = parsed.data;
     const result = await recommendHospitals({ lat, lng, department, severity });
-    const patient = new Patient({
-      location: {
-        type: 'Point',
-        coordinates: [lng, lat]
-      },
-      ...result
-    });
-    await patient.save();
 
-    return res.json({ ...result, patientId: patient._id });
+    return res.json(result);
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'Symptom analysis failed' });
@@ -152,6 +145,24 @@ router.get('/dashboard/patients', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'Failed to fetch patients' });
+  }
+});
+
+// Fetch historical admitted (resolved) patients for a hospital
+router.get('/dashboard/history', authenticateToken, async (req, res) => {
+  try {
+    const patients = await Patient.find({
+      assignedTo: req.user.id,
+      status: 'resolved'
+    })
+    .populate('requestedHospital', 'hospitalName')
+    .populate('assignedAmbulance', 'driverName vehicleNumber')
+    .sort({ createdAt: -1 });
+
+    return res.json(patients);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to fetch patient history' });
   }
 });
 
@@ -208,6 +219,61 @@ router.post('/emergency/:id/accept', authenticateToken, async (req, res) => {
     return res.json({ message: 'Emergency claimed successfully', patient });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to claim emergency' });
+  }
+});
+
+// Assign driver endpoint
+router.post('/emergency/:id/assign-driver', authenticateToken, async (req, res) => {
+  try {
+    const schema = z.object({ driverId: z.string().min(1) });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Driver ID is required' });
+
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ message: 'Emergency not found' });
+    if (patient.assignedTo?.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Emergency not assigned to your hospital' });
+    }
+
+    const driver = await AmbulanceDriver.findById(parsed.data.driverId);
+    if (!driver) return res.status(404).json({ message: 'Driver not found' });
+    if (!driver.isAvailable) return res.status(400).json({ message: 'Driver is already on a mission' });
+
+    driver.isAvailable = false;
+    await driver.save();
+
+    patient.assignedAmbulance = parsed.data.driverId;
+    await patient.save();
+
+    // Populate patient completely for the driver
+    const populatedPatient = await Patient.findById(patient._id).populate('requestedHospital', 'hospitalName');
+    
+    // Notify the specific driver
+    io.to(`driver_${parsed.data.driverId}`).emit('new_mission', populatedPatient);
+
+    return res.json({ message: 'Driver assigned successfully', patient });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to assign driver' });
+  }
+});
+
+// Mark emergency as admitted (resolved)
+router.post('/emergency/:id/admit', authenticateToken, async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ message: 'Emergency not found' });
+    if (patient.assignedTo?.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Emergency not assigned to your hospital' });
+    }
+
+    patient.status = 'resolved';
+    await patient.save();
+
+    return res.json({ message: 'Patient marked as admitted successfully', patient });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to mark patient as admitted' });
   }
 });
 

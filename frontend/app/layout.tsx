@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { PatientHeader } from "@/components/sections/patient-header";
 import { PatientFooter } from "@/components/sections/patient-footer";
+import { HospitalHeader } from "@/components/sections/hospital-header";
+import { HospitalFooter } from "@/components/sections/hospital-footer";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 
 export const metadata: Metadata = {
@@ -24,8 +26,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <LanguageProvider>
           <PatientHeader />
+          <HospitalHeader />
           {children}
           <PatientFooter />
+          <HospitalFooter />
         </LanguageProvider>
       </body>
     </html>

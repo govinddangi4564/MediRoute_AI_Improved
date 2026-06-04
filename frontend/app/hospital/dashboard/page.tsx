@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { AlertTriangle, Clock, Activity, ExternalLink, Hospital, MapPin, LogOut, Truck } from "lucide-react";
+import { playAlertSound } from "@/lib/utils";
 
 interface Patient {
   _id: string;
@@ -22,6 +23,14 @@ interface Patient {
   location?: {
     coordinates: [number, number];
   };
+  assignedAmbulance?: any;
+}
+
+interface AmbulanceDriver {
+  _id: string;
+  driverName: string;
+  vehicleNumber: string;
+  isAvailable: boolean;
 }
 
 export default function HospitalDashboard() {
@@ -29,6 +38,10 @@ export default function HospitalDashboard() {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState("");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  
+  const [showDispatchModal, setShowDispatchModal] = useState<string | null>(null); // patientId
+  const [drivers, setDrivers] = useState<AmbulanceDriver[]>([]);
+  const [fetchingDrivers, setFetchingDrivers] = useState(false);
 
   const router = useRouter();
   const [hospitalName, setHospitalName] = useState("Hospital Command Center");
@@ -96,15 +109,8 @@ export default function HospitalDashboard() {
     socket.on("new_emergency", (patient: Patient) => {
       setPatients((prev) => [patient, ...prev]);
       
-      // Play alert sound for critical/high severity
-      if (patient.severity === "critical" || patient.severity === "high") {
-        try {
-          const audio = new Audio("/alert.mp3");
-          audio.play().catch(e => console.log("Audio play blocked", e));
-        } catch (e) {
-          // Ignore audio errors
-        }
-      }
+      // Play alert sound for new incoming emergency
+      playAlertSound();
     });
 
     socket.on("emergency_accepted", ({ patientId, hospitalId: acceptedByHospitalId }) => {
@@ -191,10 +197,72 @@ export default function HospitalDashboard() {
     }
   };
 
-  const ambulanceDispatchUrl = (patient: Patient) => {
-    const coords = patient.location?.coordinates;
-    const target = coords ? `&targetLat=${coords[1]}&targetLng=${coords[0]}` : "";
-    return `/ambulance?patientId=${patient._id}${target}`;
+  const openDispatchModal = async (patientId: string) => {
+    setShowDispatchModal(patientId);
+    setFetchingDrivers(true);
+    const token = localStorage.getItem("hospital_token");
+    try {
+      const res = await fetch(`${apiUrl}/api/ambulance/drivers`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDrivers(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFetchingDrivers(false);
+    }
+  };
+
+  const assignDriver = async (driverId: string, patientId: string) => {
+    const token = localStorage.getItem("hospital_token");
+    try {
+      const res = await fetch(`${apiUrl}/api/emergency/${patientId}/assign-driver`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ driverId })
+      });
+      if (res.ok) {
+        setShowDispatchModal(null);
+        // We could manually update the patient list, but typically the socket or a re-fetch handles it.
+        // Let's update locally so we see it's assigned
+        setPatients(prev => prev.map(p => p._id === patientId ? { ...p, assignedAmbulance: driverId } : p));
+        if (selectedPatient?._id === patientId) {
+          setSelectedPatient(prev => prev ? { ...prev, assignedAmbulance: driverId } : null);
+        }
+      } else {
+        const data = await res.json();
+        setError(data.message || "Failed to assign driver");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to assign driver");
+    }
+  };
+
+  const admitEmergency = async (patientId: string) => {
+    const token = localStorage.getItem("hospital_token");
+    try {
+      const res = await fetch(`${apiUrl}/api/emergency/${patientId}/admit`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      if (res.ok) {
+        setPatients(prev => prev.filter(p => p._id !== patientId));
+        setSelectedPatient(prev => (prev?._id === patientId ? null : prev));
+      } else {
+        const data = await res.json();
+        setError(data.message || "Failed to admit patient");
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to admit patient");
+    }
   };
 
   const severityColors = {
@@ -238,13 +306,6 @@ export default function HospitalDashboard() {
               <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
               {isConnected ? "Live Connected" : "Disconnected"}
             </div>
-            <button 
-              onClick={handleLogout}
-              className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-2"
-              title="Logout"
-            >
-              <LogOut size={20} />
-            </button>
           </div>
         </header>
 
@@ -337,16 +398,19 @@ export default function HospitalDashboard() {
                         >
                           Accepted
                         </button>
-                        <a
-                          href={ambulanceDispatchUrl(patient)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-1"
+                        <button
+                          onClick={() => openDispatchModal(patient._id)}
+                          className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-2"
                         >
                           <Truck size={14} />
-                          Open Ambulance Dispatch
-                          <ExternalLink size={12} />
-                        </a>
+                          {patient.assignedAmbulance ? "Driver Assigned" : "Dispatch Ambulance"}
+                        </button>
+                        <button
+                          onClick={() => admitEmergency(patient._id)}
+                          className="w-full px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-2"
+                        >
+                          Mark as Admitted
+                        </button>
                       </div>
                     )}
                     <button 
@@ -464,16 +528,75 @@ export default function HospitalDashboard() {
                   </button>
                 )}
                 {selectedPatient.status !== 'pending' && (
-                  <a
-                    href={ambulanceDispatchUrl(selectedPatient)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Truck size={16} />
-                    Ambulance Dispatch
-                    <ExternalLink size={14} />
-                  </a>
+                  <>
+                    <button
+                      onClick={() => {
+                        setSelectedPatient(null);
+                        openDispatchModal(selectedPatient._id);
+                      }}
+                      className="px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Truck size={16} />
+                      {selectedPatient.assignedAmbulance ? "Driver Assigned" : "Dispatch Ambulance"}
+                    </button>
+                    <button
+                      onClick={() => admitEmergency(selectedPatient._id)}
+                      className="px-4 py-2 bg-purple-600 text-white hover:bg-purple-700 text-sm font-medium rounded transition-colors flex items-center justify-center gap-2"
+                    >
+                      Mark as Admitted
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Dispatch Ambulance Modal */}
+        {showDispatchModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+              <div className="p-5 border-b bg-gray-50 flex justify-between items-center">
+                <h2 className="font-bold text-gray-900 flex items-center gap-2">
+                  <Truck className="text-red-600" size={20} />
+                  Dispatch Driver
+                </h2>
+                <button 
+                  onClick={() => setShowDispatchModal(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <span className="text-xl leading-none">&times;</span>
+                </button>
+              </div>
+              
+              <div className="p-5 max-h-[60vh] overflow-y-auto">
+                {fetchingDrivers ? (
+                  <div className="text-center py-6 text-gray-500 animate-pulse">Loading drivers...</div>
+                ) : drivers.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500">
+                    No drivers registered to your hospital yet.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {drivers.map(driver => (
+                      <div key={driver._id} className="border rounded-lg p-3 flex justify-between items-center hover:bg-gray-50 transition-colors">
+                        <div>
+                          <p className="font-semibold text-gray-900 flex items-center gap-2">
+                            {driver.driverName}
+                            {!driver.isAvailable && <span className="text-[10px] uppercase tracking-wider bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">On Mission</span>}
+                          </p>
+                          <p className="text-xs text-gray-500 font-mono mt-0.5">{driver.vehicleNumber}</p>
+                        </div>
+                        <button
+                          onClick={() => assignDriver(driver._id, showDispatchModal)}
+                          disabled={!driver.isAvailable}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${driver.isAvailable ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                        >
+                          {driver.isAvailable ? 'Assign' : 'Busy'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

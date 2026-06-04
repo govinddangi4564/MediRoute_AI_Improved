@@ -87,6 +87,7 @@ router.post('/analyze', async (req, res) => {
 
 // 3. Keep the old mock endpoint just in case you want to click the button on the website
 router.post('/test-call', async (req, res) => {
+  const { lat, lng } = req.body;
   const mockSymptoms = "Patient reported severe chest pain radiating to the left arm and shortness of breath over a phone call.";
   try {
     const patient = new Patient({
@@ -99,7 +100,7 @@ router.post('/test-call', async (req, res) => {
       status: 'pending',
       location: {
         type: 'Point',
-        coordinates: [77.2090, 28.6139] // Fallback to Delhi
+        coordinates: [lng || 77.2090, lat || 28.6139] // Fallback to Delhi if no location provided
       }
     });
     await patient.save();

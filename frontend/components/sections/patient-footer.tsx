@@ -1,9 +1,15 @@
 "use client";
 
 import { useLang } from "@/contexts/LanguageContext";
+import { usePathname } from "next/navigation";
 
 export function PatientFooter() {
   const { t } = useLang();
+  const pathname = usePathname();
+
+  if (pathname.startsWith("/hospital/") || pathname === "/hospital" || pathname.startsWith("/ambulance")) {
+    return null;
+  }
 
   return (
     <footer style={{ borderTop: "1px solid var(--line)", padding: "24px 0", background: "rgba(250,247,240,0.86)" }}>

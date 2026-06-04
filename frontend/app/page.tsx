@@ -51,37 +51,60 @@ export default function HomePage() {
   const { t } = useLang();
   
   const testWearableSOS = async () => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/wearable/sos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceType: "Apple Watch Series 9",
-          heartRate: 190,
-          fallDetected: true,
-          lat: 28.7041,
-          lng: 77.1025
-        })
-      });
-      if (res.ok) {
-        alert("Mock SOS sent successfully! Check the Hospital Dashboard.");
-      }
-    } catch (err) {
-      console.error(err);
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/wearable/sos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceType: "Apple Watch Series 9",
+            heartRate: 190,
+            fallDetected: true,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          })
+        });
+        if (res.ok) {
+          alert("Mock SOS sent successfully! Check the Hospital Dashboard.");
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, () => {
+      alert("Location access denied. Cannot send SOS.");
+    });
   };
 
   const testPhoneCall = async () => {
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/voice/test-call`, {
-        method: 'POST'
-      });
-      if (res.ok) {
-        alert("Mock phone call received! Emergency alert sent to the dashboard.");
-      }
-    } catch (err) {
-      console.error(err);
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/voice/test-call`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          })
+        });
+        if (res.ok) {
+          alert("Mock phone call received! Emergency alert sent to the dashboard.");
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, () => {
+      alert("Location access denied. Cannot simulate phone call.");
+    });
   };
 
   return (
