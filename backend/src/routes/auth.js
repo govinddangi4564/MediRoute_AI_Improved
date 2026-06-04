@@ -27,6 +27,7 @@ router.post('/register', async (req, res) => {
       email: parsed.data.email,
       password: parsed.data.password,
       hospitalName: parsed.data.hospitalName,
+      address: `Live location captured at ${parsed.data.lat.toFixed(6)}, ${parsed.data.lng.toFixed(6)}`,
       location: {
         type: 'Point',
         coordinates: [parsed.data.lng, parsed.data.lat] // [longitude, latitude]

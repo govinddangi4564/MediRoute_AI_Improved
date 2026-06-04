@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { analyzeReportsWithGemini, analyzeWithGemini } from '../services/gemini.js';
 import { recommendHospitals } from '../services/maps.js';
 import { Patient } from '../models/patient.js';
+import { HospitalUser } from '../models/hospitalUser.js';
 import { io } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { startEmergencyRouting } from '../services/routing.js';
@@ -95,45 +97,96 @@ router.post('/hospitals/recommend', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ message: 'Invalid hospital payload' });
 
   try {
-    const result = await recommendHospitals(parsed.data);
-    return res.json(result);
-  } catch {
-    return res.status(500).json({ message: 'Hospital recommendation failed' });
+    const { lat, lng, department, severity } = parsed.data;
+    const result = await recommendHospitals({ lat, lng, department, severity });
+    const patient = new Patient({
+      location: {
+        type: 'Point',
+        coordinates: [lng, lat]
+      },
+      ...result
+    });
+    await patient.save();
+
+    return res.json({ ...result, patientId: patient._id });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Symptom analysis failed' });
   }
 });
+
 
 // Dashboard endpoints
 router.get('/dashboard/patients', authenticateToken, async (req, res) => {
   try {
+    const hospital = await HospitalUser.findById(req.user.id);
+    if (!hospital) return res.status(404).json({ message: 'Hospital not found' });
+
+    const radiusInRadians = 50000 / 6378100; // 50km
+
     const patients = await Patient.find({
       $or: [
-        { status: 'pending' },
+        { status: 'pending', requestedHospital: req.user.id },
+        {
+          status: 'pending',
+          requestedHospital: { $exists: false },
+          location: {
+            $geoWithin: {
+              $centerSphere: [hospital.location.coordinates, radiusInRadians]
+            }
+          }
+        },
+        {
+          status: 'pending',
+          requestedHospital: null,
+          location: {
+            $geoWithin: {
+              $centerSphere: [hospital.location.coordinates, radiusInRadians]
+            }
+          }
+        },
         { assignedTo: req.user.id }
       ]
-    }).sort({ createdAt: -1 }).limit(50);
+    }).populate('requestedHospital', 'hospitalName').sort({ createdAt: -1 }).limit(50);
     return res.json(patients);
   } catch (err) {
+    console.error(err);
     return res.status(500).json({ message: 'Failed to fetch patients' });
   }
 });
 
-// Explicit request for ambulance
+// Explicit request for medical help from a selected hospital
 router.post('/emergency/:id/request', async (req, res) => {
   try {
-    const { hospitalId } = req.body;
+    const schema = z.object({
+      hospitalId: z.string().min(1),
+      hospitalName: z.string().min(2)
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: 'Hospital selection is required' });
+
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ message: 'Patient not found' });
-    
+
     patient.status = 'pending';
+    patient.requestedHospitalName = parsed.data.hospitalName;
+    patient.requestedHospitalExternalId = parsed.data.hospitalId;
+    if (mongoose.Types.ObjectId.isValid(parsed.data.hospitalId)) {
+      patient.requestedHospital = parsed.data.hospitalId;
+    }
     await patient.save();
 
-    // Auto-route to nearby registered hospital dashboards
-    startEmergencyRouting(patient._id);
+    const populatedPatient = await Patient.findById(patient._id).populate('requestedHospital', 'hospitalName');
+    if (mongoose.Types.ObjectId.isValid(parsed.data.hospitalId)) {
+      io.to(`hospital_${parsed.data.hospitalId}`).emit('new_emergency', populatedPatient);
+    } else {
+      startEmergencyRouting(patient._id);
+    }
 
-    return res.json({ message: 'Ambulance requested successfully', patient });
+    return res.json({ message: 'Medical help request sent successfully', patient: populatedPatient });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ message: 'Failed to request ambulance' });
+    return res.status(500).json({ message: 'Failed to request medical help' });
   }
 });
 

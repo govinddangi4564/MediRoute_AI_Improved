@@ -6,6 +6,7 @@ import { Activity, AlertTriangle, Clock, ExternalLink, HeartPulse, MapPin, Navig
 import { getHospitalRecommendations } from "@/lib/api";
 import { AnalysisResult, HospitalRecommendation } from "@/types";
 import { useLang } from "@/contexts/LanguageContext";
+import AmbulanceTracking from "../hospitals/ambulance-tracking";
 
 const SEVERITY_COLORS: Record<string, string> = {
   low: "#46745d",
@@ -30,6 +31,7 @@ export default function DashboardPage() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [hospitals, setHospitals] = useState<HospitalRecommendation[]>([]);
   const [bestId, setBestId] = useState("");
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,6 +58,7 @@ export default function DashboardPage() {
       navigator.geolocation.getCurrentPosition(
         async ({ coords }) => {
           try {
+            setCurrentLocation({ lat: coords.latitude, lng: coords.longitude });
             const data = await getHospitalRecommendations({
               lat: coords.latitude,
               lng: coords.longitude,
@@ -245,6 +248,15 @@ export default function DashboardPage() {
               <HeartPulse className="mb-2" size={18} />
               {t("dashboard.keepOpen")}
             </div>
+
+            {analysis?.patientId && currentLocation && (
+              <div className="mt-5">
+                <AmbulanceTracking
+                  targetLat={currentLocation.lat}
+                  targetLng={currentLocation.lng}
+                />
+              </div>
+            )}
           </aside>
         </div>
       </div>

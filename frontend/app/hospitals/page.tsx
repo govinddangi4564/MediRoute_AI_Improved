@@ -3,10 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Building2, Clock, ExternalLink, LocateFixed, MapPin, PhoneCall, Star } from "lucide-react";
-import { getHospitalRecommendations, requestAmbulance } from "@/lib/api";
+import { getHospitalRecommendations, requestMedicalHelp } from "@/lib/api";
 import { AnalysisResult, HospitalRecommendation } from "@/types";
 import { useLang } from "@/contexts/LanguageContext";
-import AmbulanceTracking from "./ambulance-tracking";
 
 function EmptyState({ message }: { message: string }) {
   const { t } = useLang();
@@ -63,7 +62,7 @@ export default function HospitalsPage() {
   const [selectedId, setSelectedId] = useState("");
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState("");
-  const [isAmbulanceRequested, setIsAmbulanceRequested] = useState(false);
+  const [requestedHospitalName, setRequestedHospitalName] = useState("");
   const [isRequesting, setIsRequesting] = useState(false);
 
   const analysisResult = useMemo(() => parseSavedJson<AnalysisResult>("lifelineAnalysis"), []);
@@ -123,17 +122,16 @@ export default function HospitalsPage() {
   );
   const mapUrl = selectedHospital ? googleMapsRouteEmbedUrl(selectedHospital, currentLocation) : "";
 
-  const handleRequestAmbulance = async () => {
+  const handleRequestMedicalHelp = async () => {
     if (!analysisResult?.patientId || !selectedHospital) return;
     
     setIsRequesting(true);
     try {
-      await requestAmbulance(analysisResult.patientId, selectedHospital.id);
-      
-      setIsAmbulanceRequested(true);
+      await requestMedicalHelp(analysisResult.patientId, selectedHospital.id, selectedHospital.name);
+      setRequestedHospitalName(selectedHospital.name);
     } catch (err) {
       console.error(err);
-      alert("Failed to request ambulance. Please try calling 112 instead.");
+      alert("Failed to send medical help request. Please try calling 112 instead.");
     } finally {
       setIsRequesting(false);
     }
@@ -295,23 +293,36 @@ export default function HospitalsPage() {
             </div>
             {selectedHospital && analysisResult?.patientId && (
               <div className="lg:sticky lg:top-[460px]">
-                {!isAmbulanceRequested ? (
-                  <div className="border bg-white rounded-xl shadow-sm p-6 text-center mt-4">
-                    <h3 className="font-semibold text-lg mb-2 text-gray-800">Need an Emergency Ambulance?</h3>
-                    <p className="text-sm text-gray-500 mb-5">
-                      Send a request to {selectedHospital.name} and track the live location of your driver.
-                    </p>
-                    <button 
-                      onClick={handleRequestAmbulance} 
+                <div className="border bg-white rounded-xl shadow-sm p-6 text-center mt-4">
+                  {requestedHospitalName ? (
+                    <>
+                      <h3 className="font-semibold text-lg mb-2 text-gray-800">Request sent</h3>
+                      <p className="text-sm text-gray-500 mb-5">
+                        Your medical help request was sent to <span className="font-semibold text-gray-800">{requestedHospitalName}</span>.
+                      </p>
+                      <Link href="/dashboard" className="btn btn-primary mb-2 w-full justify-center">
+                        Track ambulance on live dashboard
+                      </Link>
+                      <a href="tel:112" className="btn btn-danger w-full justify-center">
+                        <PhoneCall size={16} /> Call 112 if symptoms worsen
+                      </a>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="font-semibold text-lg mb-2 text-gray-800">Request medical help</h3>
+                      <p className="text-sm text-gray-500 mb-5">
+                        Send this triage summary to {selectedHospital.name}. Ambulance tracking will appear on the live dashboard after dispatch.
+                      </p>
+                      <button 
+                      onClick={handleRequestMedicalHelp} 
                       disabled={isRequesting}
                       className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-70"
-                    >
-                      <AlertTriangle size={18} /> {isRequesting ? "Requesting..." : "Request Ambulance"}
-                    </button>
-                  </div>
-                ) : (
-                  <AmbulanceTracking targetLat={selectedHospital.lat} targetLng={selectedHospital.lng} />
-                )}
+                      >
+                        <AlertTriangle size={18} /> {isRequesting ? "Sending..." : "Send medical help request"}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>

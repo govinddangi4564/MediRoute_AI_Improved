@@ -26,7 +26,10 @@ const patientSchema = new mongoose.Schema({
     coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
   },
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser' },
+  assignedAmbulance: { type: mongoose.Schema.Types.ObjectId, ref: 'AmbulanceDriver' },
   requestedHospital: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser' },
+  requestedHospitalName: { type: String, default: '' },
+  requestedHospitalExternalId: { type: String, default: '' },
   status: { type: String, enum: ['draft', 'pending', 'assigned', 'resolved'], default: 'draft' },
   createdAt: { type: Date, default: Date.now }
 });

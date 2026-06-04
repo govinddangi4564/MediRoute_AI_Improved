@@ -60,9 +60,9 @@ export async function getHospitalRecommendations(payload: {
   });
 }
 
-export async function requestAmbulance(patientId: string, hospitalId: string): Promise<any> {
+export async function requestMedicalHelp(patientId: string, hospitalId: string, hospitalName: string): Promise<any> {
   return apiRequest(`/emergency/${patientId}/request`, {
     method: 'POST',
-    body: JSON.stringify({ hospitalId })
+    body: JSON.stringify({ hospitalId, hospitalName })
   });
 }

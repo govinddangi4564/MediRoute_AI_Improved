@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
-import { AlertTriangle, Clock, Activity, MapPin, LogOut } from "lucide-react";
+import { AlertTriangle, Clock, Activity, ExternalLink, Hospital, MapPin, LogOut, Truck } from "lucide-react";
 
 interface Patient {
   _id: string;
@@ -14,6 +14,11 @@ interface Patient {
   department: string;
   status: string;
   createdAt: string;
+  requestedHospital?: {
+    _id: string;
+    hospitalName: string;
+  } | null;
+  requestedHospitalName?: string;
   location?: {
     coordinates: [number, number];
   };
@@ -23,6 +28,7 @@ export default function HospitalDashboard() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
   const router = useRouter();
   const [hospitalName, setHospitalName] = useState("Hospital Command Center");
@@ -103,6 +109,19 @@ export default function HospitalDashboard() {
 
     socket.on("emergency_accepted", ({ patientId, hospitalId: acceptedByHospitalId }) => {
       const myHospitalId = localStorage.getItem("hospital_id");
+      
+      setSelectedPatient(prev => {
+        if (prev && prev._id === patientId && myHospitalId !== acceptedByHospitalId) {
+          // Patient was accepted by someone else, close the modal
+          return null; 
+        }
+        // If it was accepted by us, we might want to update the status in the modal
+        if (prev && prev._id === patientId && myHospitalId === acceptedByHospitalId) {
+          return { ...prev, status: 'assigned' };
+        }
+        return prev;
+      });
+
       setPatients((prev) => {
         if (myHospitalId === acceptedByHospitalId) {
           return prev.map(p => p._id === patientId ? { ...p, status: 'assigned' } : p);
@@ -156,11 +175,26 @@ export default function HospitalDashboard() {
         }
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-      // The socket event will update the UI
+      if (!res.ok) {
+        if (res.status === 400 && data.message === 'Emergency already claimed') {
+          // Someone else got it just before us
+          setPatients(prev => prev.filter(p => p._id !== patientId));
+          setSelectedPatient(prev => (prev?._id === patientId ? null : prev));
+          setError("This emergency was just claimed by another hospital.");
+          return;
+        }
+        throw new Error(data.message);
+      }
+      // The socket event will update the UI for success
     } catch (err: any) {
       setError(err.message || "Failed to accept emergency");
     }
+  };
+
+  const ambulanceDispatchUrl = (patient: Patient) => {
+    const coords = patient.location?.coordinates;
+    const target = coords ? `&targetLat=${coords[1]}&targetLng=${coords[0]}` : "";
+    return `/ambulance?patientId=${patient._id}${target}`;
   };
 
   const severityColors = {
@@ -279,6 +313,12 @@ export default function HospitalDashboard() {
                         {patient.department}
                       </span>
                     </div>
+                    {(patient.requestedHospital?.hospitalName || patient.requestedHospitalName) && (
+                      <div className="inline-flex items-center gap-2 rounded border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                        <Hospital size={13} />
+                        Patient requested: {patient.requestedHospital?.hospitalName || patient.requestedHospitalName}
+                      </div>
+                    )}
                   </div>
                   
                   <div className="flex shrink-0 gap-2 w-full md:w-auto mt-2 md:mt-0">
@@ -287,7 +327,7 @@ export default function HospitalDashboard() {
                         onClick={() => acceptEmergency(patient._id)}
                         className="flex-1 md:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors"
                       >
-                        Accept
+                        Accept & Dispatch
                       </button>
                     ) : (
                       <div className="flex flex-col gap-2 min-w-[120px]">
@@ -297,17 +337,22 @@ export default function HospitalDashboard() {
                         >
                           Accepted
                         </button>
-                        <a 
-                          href={`/ambulance?patientId=${patient._id}${patient.location ? `&targetLat=${patient.location.coordinates[1]}&targetLng=${patient.location.coordinates[0]}` : ''}`} 
-                          target="_blank" 
+                        <a
+                          href={ambulanceDispatchUrl(patient)}
+                          target="_blank"
                           rel="noreferrer"
                           className="w-full px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors text-center flex items-center justify-center gap-1"
                         >
-                          Driver View
+                          <Truck size={14} />
+                          Open Ambulance Dispatch
+                          <ExternalLink size={12} />
                         </a>
                       </div>
                     )}
-                    <button className="flex-1 md:flex-none px-4 py-2 bg-white border hover:bg-gray-50 text-gray-700 text-sm font-medium rounded transition-colors">
+                    <button 
+                      onClick={() => setSelectedPatient(patient)}
+                      className="flex-1 md:flex-none px-4 py-2 bg-white border hover:bg-gray-50 text-gray-700 text-sm font-medium rounded transition-colors"
+                    >
                       Details
                     </button>
                   </div>
@@ -316,6 +361,124 @@ export default function HospitalDashboard() {
             </div>
           )}
         </div>
+
+        {/* Patient Details Modal */}
+        {selectedPatient && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b flex justify-between items-center sticky top-0 bg-white">
+                <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <Activity className="text-blue-600" size={20} />
+                  Emergency Details
+                </h2>
+                <button 
+                  onClick={() => setSelectedPatient(null)}
+                  className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  aria-label="Close"
+                >
+                  <span className="text-2xl leading-none">&times;</span>
+                </button>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-2 gap-5">
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Patient ID</p>
+                    <p className="text-gray-900 text-sm font-mono truncate" title={selectedPatient._id}>{selectedPatient._id}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Status</p>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize border ${selectedPatient.status === 'pending' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                      {selectedPatient.status}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Severity</p>
+                    <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold uppercase tracking-wider border ${severityColors[selectedPatient.severity]}`}>
+                      {selectedPatient.severity}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Emergency Level</p>
+                    <p className="text-gray-900 font-medium">{selectedPatient.emergencyLevel}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Department</p>
+                    <p className="text-gray-900 flex items-center gap-1.5">
+                      <MapPin size={16} className="text-red-400" />
+                      {selectedPatient.department}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Possible Disease</p>
+                    <p className="text-gray-900 flex items-center gap-1.5">
+                      <Activity size={16} className="text-blue-500" />
+                      {selectedPatient.possibleDisease}
+                    </p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Symptoms</p>
+                    <p className="text-gray-900 bg-gray-50 p-3 rounded-lg border border-gray-100">{selectedPatient.symptoms}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Reported At</p>
+                    <p className="text-gray-900 flex items-center gap-1.5">
+                      <Clock size={16} className="text-gray-400" />
+                      {new Date(selectedPatient.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {selectedPatient.location?.coordinates && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Location Coordinates</p>
+                      <p className="text-gray-900 font-mono text-sm bg-gray-50 p-2 rounded border border-gray-100 inline-block">
+                        Lat: {selectedPatient.location.coordinates[1]}, Lng: {selectedPatient.location.coordinates[0]}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedPatient.requestedHospital?.hospitalName || selectedPatient.requestedHospitalName) && (
+                     <div className="col-span-2">
+                       <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Requested Hospital</p>
+                       <p className="text-gray-900 flex items-center gap-1.5 bg-blue-50/50 p-2 rounded border border-blue-100">
+                         <Hospital size={16} className="text-blue-500" />
+                         {selectedPatient.requestedHospital?.hospitalName || selectedPatient.requestedHospitalName}
+                       </p>
+                     </div>
+                  )}
+                </div>
+              </div>
+              <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 rounded-b-xl">
+                <button 
+                  onClick={() => setSelectedPatient(null)}
+                  className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-100 text-gray-700 text-sm font-medium rounded transition-colors"
+                >
+                  Close
+                </button>
+                {selectedPatient.status === 'pending' && (
+                  <button 
+                    onClick={() => {
+                      acceptEmergency(selectedPatient._id);
+                      setSelectedPatient(null);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors"
+                  >
+                    Accept & Dispatch
+                  </button>
+                )}
+                {selectedPatient.status !== 'pending' && (
+                  <a
+                    href={ambulanceDispatchUrl(selectedPatient)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 text-sm font-medium rounded transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Truck size={16} />
+                    Ambulance Dispatch
+                    <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

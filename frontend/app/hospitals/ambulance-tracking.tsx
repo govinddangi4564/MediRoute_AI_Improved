@@ -40,6 +40,7 @@ export default function AmbulanceTracking({ targetLat, targetLng }: AmbulanceTra
     });
 
     socket.on("ambulance_location", (data: { lat: number; lng: number }) => {
+      setDispatched(true);
       setAmbLat(data.lat);
       setAmbLng(data.lng);
       
