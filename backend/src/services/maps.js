@@ -213,6 +213,35 @@ function emergencyScore(hospital, severity, department) {
   return Number(((severityWeight * rating * deptMatch * facilityWeight * specialtyPenalty) / Math.max(distancePenalty, etaPenalty)).toFixed(2));
 }
 
+function inferCapabilities(hospital, department, severity) {
+  const infoText = facilityText(hospital);
+  const capabilities = new Set();
+  const add = (value) => capabilities.add(value);
+
+  if (getFacilityKind(hospital) === 'hospital') add('Hospital facility');
+  if (/\b(emergency|trauma|casualty)\b/.test(infoText) || severity === 'high' || severity === 'critical') add('Emergency care fit');
+  if (/\b(icu|critical|intensive)\b/.test(infoText)) add('ICU signal');
+  if (/\b(cardiac|cardio|heart)\b/.test(infoText) || /cardio|heart|chest/i.test(department)) add('Cardiac care signal');
+  if (/\b(neuro|stroke|brain)\b/.test(infoText) || /neuro|brain|stroke/i.test(department)) add('Neurology signal');
+  if (/\b(ortho|trauma|fracture|bone)\b/.test(infoText) || /ortho|bone|fracture/i.test(department)) add('Trauma/orthopedic signal');
+  if (/\b(child|children|pediatric|paediatric)\b/.test(infoText) || /pediatric|child/i.test(department)) add('Pediatric signal');
+  if (/\b(maternity|gynec|gynae|obstetric)\b/.test(infoText) || /gynec|pregnancy|maternity/i.test(department)) add('Maternity signal');
+  if (departmentMatchScore(infoText, department) > 1) add('Department match');
+  if (!capabilities.size) add('Nearby general care');
+
+  return [...capabilities].slice(0, 5);
+}
+
+function buildMatchReason(hospital, severity, department) {
+  const reasons = [];
+  if (hospital.etaMinutes) reasons.push(`${hospital.etaMinutes} min estimated drive`);
+  if (hospital.distanceKm !== undefined) reasons.push(`${hospital.distanceKm} km away`);
+  if (departmentMatchScore(facilityText(hospital), department) > 1) reasons.push(`matches ${department}`);
+  if (getFacilityKind(hospital) === 'hospital') reasons.push('hospital-level facility');
+  if (severity === 'high' || severity === 'critical') reasons.push('prioritized for urgent severity');
+  return reasons.length ? `Recommended because it is ${reasons.join(', ')}.` : 'Recommended from nearby care options.';
+}
+
 function validLatLng(lat, lng) {
   return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 }
@@ -269,6 +298,10 @@ function fallbackHospitals(lat, lng, department, severity) {
 
   base.sort((a, b) => b.emergencySuitability - a.emergencySuitability);
   const hospitals = base.map(({ types, ...rest }) => rest);
+  for (const hospital of hospitals) {
+    hospital.capabilities = inferCapabilities({ ...hospital, types: ['hospital', 'emergency'] }, department, severity);
+    hospital.matchReason = buildMatchReason(hospital, severity, department);
+  }
   return { bestHospitalId: hospitals[0]?.id || '', hospitals, isFallback: true, source: 'fallback' };
 }
 
@@ -633,7 +666,14 @@ async function buildHospitalResponse(candidates, { lat, lng, department, severit
       facilitySortRank(b) - facilitySortRank(a) ||
       b.emergencySuitability - a.emergencySuitability
   );
-  const hospitals = rankedCandidates.slice(0, limit).map(({ sourceKey: _sourceKey, source: _source, types: _types, ...rest }) => rest);
+  const hospitals = rankedCandidates.slice(0, limit).map((candidate) => {
+    const { sourceKey: _sourceKey, source: _source, types: _types, ...rest } = candidate;
+    return {
+      ...rest,
+      capabilities: inferCapabilities(candidate, department, severity),
+      matchReason: buildMatchReason(candidate, severity, department)
+    };
+  });
 
   return {
     bestHospitalId: hospitals[0]?.id || '',

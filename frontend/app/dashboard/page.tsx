@@ -181,6 +181,18 @@ export default function DashboardPage() {
                       <span><MapPin size={13} className="mr-1 inline" />{hospital.distanceKm} km</span>
                       <span>{hospital.rating} {t("hospitals.rating")}</span>
                     </div>
+                    {hospital.matchReason && (
+                      <p className="mt-2 text-[12.5px] leading-5 text-[var(--muted)]">{hospital.matchReason}</p>
+                    )}
+                    {(hospital.capabilities || []).length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {(hospital.capabilities || []).slice(0, 3).map((capability) => (
+                          <span key={capability} className="border border-[var(--line)] bg-white px-2 py-0.5 text-[11px] text-[var(--accent-dark)]">
+                            {capability}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <a
                     href={`https://www.google.com/maps/dir/?api=1&destination=${hospital.lat},${hospital.lng}`}
@@ -207,6 +219,9 @@ export default function DashboardPage() {
                   <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--muted)]">{t("dashboard.topMatch")}</p>
                   <h3 className="text-[18px] font-semibold text-[var(--ink)]">{best.name}</h3>
                   <p className="mt-1 text-[13px] leading-5 text-[var(--muted)]">{best.address}</p>
+                  {best.matchReason && (
+                    <p className="mt-3 text-[13px] leading-5 text-[var(--muted)]">{best.matchReason}</p>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-2 text-[12.5px] text-[var(--muted)]">
                     <span className="border border-[var(--line)] bg-[var(--warm-white)] px-3 py-1">{best.etaMinutes} {t("dashboard.minAway")}</span>
                     <span className="border border-[var(--line)] bg-[var(--warm-white)] px-3 py-1">{best.distanceKm} km</span>

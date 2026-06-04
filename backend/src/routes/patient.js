@@ -10,9 +10,19 @@ import { startEmergencyRouting } from '../services/routing.js';
 const router = Router();
 
 router.post('/analyze/symptoms', async (req, res) => {
+  const profileSchema = z.object({
+    age: z.coerce.number().int().min(0).max(120).optional(),
+    gender: z.string().max(40).optional(),
+    conditions: z.string().max(300).optional(),
+    allergies: z.string().max(300).optional(),
+    medications: z.string().max(300).optional(),
+    pregnancyStatus: z.string().max(80).optional(),
+    emergencyContact: z.string().max(80).optional()
+  }).optional();
   const schema = z.object({
     text: z.string().min(4),
     language: z.enum(['en', 'hi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'pa']),
+    profile: profileSchema,
     lat: z.number().optional(),
     lng: z.number().optional()
   });
@@ -20,7 +30,8 @@ router.post('/analyze/symptoms', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ message: 'Invalid symptom payload' });
 
   try {
-    const result = await analyzeWithGemini(parsed.data.text, parsed.data.language);
+    const profile = parsed.data.profile || {};
+    const result = await analyzeWithGemini(parsed.data.text, parsed.data.language, profile);
 
     const defaultLng = 77.2090;
     const defaultLat = 28.6139;
@@ -35,6 +46,12 @@ router.post('/analyze/symptoms', async (req, res) => {
       emergencyLevel: result.emergencyLevel,
       possibleDisease: result.possibleDisease,
       department: result.department,
+      confidenceScore: result.confidenceScore,
+      profile,
+      followUpQuestions: result.followUpQuestions || [],
+      riskTimeline: result.riskTimeline || [],
+      escalationTriggers: result.escalationTriggers || [],
+      handoffSummary: result.handoffSummary || '',
       status: 'draft',
       location: {
         type: 'Point',

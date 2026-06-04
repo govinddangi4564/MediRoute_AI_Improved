@@ -19,10 +19,37 @@ const languageNames = {
   pa: 'Punjabi'
 };
 
-function fallbackAnalysis(text) {
+function summarizePatientProfile(profile = {}) {
+  const items = [];
+  if (profile.age) items.push(`Age: ${profile.age}`);
+  if (profile.gender) items.push(`Gender: ${profile.gender}`);
+  if (profile.conditions) items.push(`Known conditions: ${profile.conditions}`);
+  if (profile.allergies) items.push(`Allergies: ${profile.allergies}`);
+  if (profile.medications) items.push(`Current medicines: ${profile.medications}`);
+  if (profile.pregnancyStatus) items.push(`Pregnancy status: ${profile.pregnancyStatus}`);
+  if (profile.emergencyContact) items.push(`Emergency contact: ${profile.emergencyContact}`);
+  return items.length ? items.join('\n') : 'No patient profile provided.';
+}
+
+function buildRiskTimeline(highRisk) {
+  return highRisk
+    ? [
+        'Now: keep the patient resting and do not leave them alone.',
+        'Within 5 minutes: call 112 if symptoms are severe or worsening.',
+        'Within 20 minutes: move toward emergency care or wait for ambulance guidance.'
+      ]
+    : [
+        'Now: rest, hydrate, and note the main symptoms.',
+        'Next 2-3 hours: monitor temperature, pain, breathing, and weakness.',
+        'Same day: consult a doctor if symptoms increase or new warning signs appear.'
+      ];
+}
+
+function fallbackAnalysis(text, profile = {}) {
   const lower = text.toLowerCase();
-  const criticalWords = ['chest pain', 'breath', 'unconscious', 'bleeding', 'stroke'];
+  const criticalWords = ['chest pain', 'breath', 'unconscious', 'bleeding', 'stroke', 'seizure'];
   const highRisk = criticalWords.some((w) => lower.includes(w));
+  const riskTimeline = buildRiskTimeline(highRisk);
   return {
     isFallback: true,
     severity: highRisk ? 'high' : 'moderate',
@@ -36,7 +63,20 @@ function fallbackAnalysis(text) {
     firstAid: highRisk
       ? ['Keep patient seated upright.', 'Loosen tight clothing.', 'If severe chest pain continues, call emergency services immediately.']
       : ['Drink fluids and take rest.', 'Use a thermometer to monitor fever.', 'Avoid self-medication without advice.'],
-    department: highRisk ? 'Emergency Medicine' : 'General Medicine'
+    department: highRisk ? 'Emergency Medicine' : 'General Medicine',
+    followUpQuestions: highRisk
+      ? ['When did the symptoms start?', 'Is there sweating, fainting, or blue lips?', 'Does the patient have diabetes, BP, asthma, or heart disease?']
+      : ['How long have symptoms been present?', 'Is there fever, breathing difficulty, or severe pain?', 'Any medicine already taken?'],
+    riskTimeline,
+    handoffSummary: [
+      `Symptoms: ${text}`,
+      `Profile: ${summarizePatientProfile(profile).replace(/\n/g, '; ')}`,
+      `Urgency: ${highRisk ? 'High risk - emergency evaluation advised' : 'Moderate risk - clinical review advised'}`,
+      `Suggested department: ${highRisk ? 'Emergency Medicine' : 'General Medicine'}`
+    ].join('\n'),
+    escalationTriggers: highRisk
+      ? ['Breathing difficulty', 'Loss of consciousness', 'Severe chest pain', 'Stroke signs', 'Heavy bleeding']
+      : ['Worsening fever', 'Breathing difficulty', 'Confusion', 'Persistent vomiting', 'Severe pain']
   };
 }
 
@@ -85,18 +125,35 @@ async function callGeminiGenerate({ model, apiKey, body }) {
   return response;
 }
 
-export async function analyzeWithGemini(text, language) {
+function normalizeAnalysis(parsed, text, profile) {
+  const fallback = fallbackAnalysis(text, profile);
+  const result = { ...fallback, ...parsed };
+  const allowedSeverity = new Set(['low', 'moderate', 'high', 'critical']);
+  if (!allowedSeverity.has(result.severity)) result.severity = fallback.severity;
+  result.confidenceScore = Number.isFinite(Number(result.confidenceScore))
+    ? Math.max(0, Math.min(100, Math.round(Number(result.confidenceScore))))
+    : fallback.confidenceScore;
+  result.recommendations = Array.isArray(result.recommendations) ? result.recommendations : fallback.recommendations;
+  result.firstAid = Array.isArray(result.firstAid) ? result.firstAid : fallback.firstAid;
+  result.followUpQuestions = Array.isArray(result.followUpQuestions) ? result.followUpQuestions : fallback.followUpQuestions;
+  result.riskTimeline = Array.isArray(result.riskTimeline) ? result.riskTimeline : fallback.riskTimeline;
+  result.escalationTriggers = Array.isArray(result.escalationTriggers) ? result.escalationTriggers : fallback.escalationTriggers;
+  result.handoffSummary = result.handoffSummary || fallback.handoffSummary;
+  return normalizeEmergencyNumber(result);
+}
+
+export async function analyzeWithGemini(text, language, profile = {}) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    return fallbackAnalysis(text);
+    return fallbackAnalysis(text, profile);
   }
 
   const requestedModel = getGeminiModel();
   const modelCandidates = Array.from(new Set([requestedModel, 'gemini-1.5-flash', 'gemini-1.5-pro']));
   const outputLanguage = languageNames[language] || 'English';
-  const prompt = `You are a healthcare triage assistant for users in India. User language: ${outputLanguage}. Analyze the symptoms and return strict JSON keys: severity(low|moderate|high|critical), emergencyLevel, possibleDisease, confidenceScore(0-100), explanation(simple words), recommendations(array of short items), firstAid(array), department. Use India's emergency number 112 whenever emergency calling is mentioned. Do not mention 911. Return all human-readable values in ${outputLanguage}. Keep severity as one of the required English enum values.`;
+  const prompt = `You are a healthcare triage assistant for users in India. User language: ${outputLanguage}. Analyze the symptoms and patient profile. Return strict JSON keys: severity(low|moderate|high|critical), emergencyLevel, possibleDisease, confidenceScore(0-100), explanation(simple words), recommendations(array of short items), firstAid(array), department, followUpQuestions(array of 3-5 critical questions), riskTimeline(array of 3 time-based action steps), escalationTriggers(array), handoffSummary(one concise paragraph for ambulance or hospital staff). Use India's emergency number 112 whenever emergency calling is mentioned. Do not mention 911. Return all human-readable values in ${outputLanguage}. Keep severity as one of the required English enum values.`;
   const body = {
-    contents: [{ parts: [{ text: `${prompt}\n\nSymptoms: ${text}` }] }],
+    contents: [{ parts: [{ text: `${prompt}\n\nPatient profile:\n${summarizePatientProfile(profile)}\n\nSymptoms: ${text}` }] }],
     generationConfig: { response_mime_type: 'application/json' }
   };
 
@@ -111,10 +168,10 @@ export async function analyzeWithGemini(text, language) {
     const data = await response.json();
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     const parsed = safeJsonParse(rawText);
-    if (parsed) return normalizeEmergencyNumber(parsed);
+    if (parsed) return normalizeAnalysis(parsed, text, profile);
   }
 
-  return fallbackAnalysis(text);
+  return fallbackAnalysis(text, profile);
 }
 
 export async function analyzeReportsWithGemini(files, language = 'en') {

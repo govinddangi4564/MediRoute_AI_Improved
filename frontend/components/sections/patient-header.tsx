@@ -37,7 +37,7 @@ export function PatientHeader() {
             <select value={lang} onChange={(event) => setLang(event.target.value as typeof lang)}>
               {languages.map((language) => (
                 <option key={language.code} value={language.code}>
-                  {language.nativeName}
+                  {language.label}
                 </option>
               ))}
             </select>

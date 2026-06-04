@@ -187,6 +187,20 @@ export default function HospitalsPage() {
                   <span className="border border-[var(--line)] bg-[#f8f4eb] px-3 py-1"><Star size={14} className="mr-1 inline" /> {selectedHospital.rating}</span>
                   <span className="border border-[var(--line)] bg-[#f8f4eb] px-3 py-1">{selectedHospital.specialization}</span>
                 </div>
+                {selectedHospital.matchReason && (
+                  <p className="mt-4 max-w-[760px] border-l-2 border-[var(--accent)] pl-3 text-[13.5px] leading-6 text-[var(--muted)]">
+                    {selectedHospital.matchReason}
+                  </p>
+                )}
+                {(selectedHospital.capabilities || []).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(selectedHospital.capabilities || []).map((capability) => (
+                      <span key={capability} className="border border-[var(--line)] bg-white px-3 py-1 text-[12px] text-[var(--accent-dark)]">
+                        {capability}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-2 sm:min-w-[190px]">
                 {selectedHospital.phone && (
@@ -237,6 +251,18 @@ export default function HospitalsPage() {
                     <span>{hospital.rating} {t("hospitals.rating")}</span>
                   </div>
                   <p className="mt-2 text-[12px] text-[var(--earth)]">{hospital.specialization}</p>
+                  {hospital.matchReason && (
+                    <p className="mt-2 text-[12.5px] leading-5 text-[var(--muted)]">{hospital.matchReason}</p>
+                  )}
+                  {(hospital.capabilities || []).length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {(hospital.capabilities || []).slice(0, 3).map((capability) => (
+                        <span key={capability} className="border border-[var(--line)] bg-white px-2 py-0.5 text-[11px] text-[var(--accent-dark)]">
+                          {capability}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <button
                       type="button"

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { analyzeSymptoms } from "@/lib/api";
 import { useLang } from "@/contexts/LanguageContext";
+import { PatientProfile } from "@/types";
 
 const quickSymptoms = [
   "symptoms.quick.fever",
@@ -63,6 +64,10 @@ function appendTranscript(base: string, chunk: string) {
 function SymptomsForm() {
   const { lang, speechLocale, t } = useLang();
   const [symptoms, setSymptoms] = useState("");
+  const [profile, setProfile] = useState<PatientProfile>({});
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
+  const [followUpAnswers, setFollowUpAnswers] = useState<string[]>([]);
+  const [followUpRequested, setFollowUpRequested] = useState(false);
   const [listening, setListening] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -158,12 +163,44 @@ function SymptomsForm() {
     setLoading(true);
     setError("");
     try {
-      const result = await analyzeSymptoms({
-        text: symptoms,
-        language: lang,
+      const coords = await new Promise<{ lat?: number; lng?: number }>((resolve) => {
+        if (!navigator.geolocation) return resolve({});
+        navigator.geolocation.getCurrentPosition(
+          ({ coords }) => resolve({ lat: coords.latitude, lng: coords.longitude }),
+          () => resolve({}),
+          { enableHighAccuracy: true, timeout: 4500, maximumAge: 60000 },
+        );
       });
+      const answerText = followUpQuestions
+        .map((question, index) => {
+          const answer = followUpAnswers[index]?.trim();
+          return answer ? `${question}\nAnswer: ${answer}` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      const finalSymptoms = answerText
+        ? `${symptoms}\n\nFollow-up answers:\n${answerText}`
+        : symptoms;
+
+      const result = await analyzeSymptoms({
+        text: finalSymptoms,
+        language: lang,
+        profile,
+        ...coords,
+      });
+
+      const questions = (result.followUpQuestions || []).filter(Boolean).slice(0, 5);
+      if (!followUpRequested && questions.length > 0) {
+        setFollowUpQuestions(questions);
+        setFollowUpAnswers(Array(questions.length).fill(""));
+        setFollowUpRequested(true);
+        setLoading(false);
+        return;
+      }
+
       localStorage.removeItem("lifelineReportAnalysis");
-      localStorage.setItem("lifelineSymptoms", symptoms);
+      localStorage.setItem("lifelineSymptoms", finalSymptoms);
+      localStorage.setItem("lifelinePatientProfile", JSON.stringify(profile));
       localStorage.setItem("lifelineAnalysis", JSON.stringify(result));
       router.push("/analysis");
     } catch {
@@ -269,6 +306,9 @@ function SymptomsForm() {
                   type="button"
                   onClick={() => {
                     setSymptoms("");
+                    setFollowUpQuestions([]);
+                    setFollowUpAnswers([]);
+                    setFollowUpRequested(false);
                     setError("");
                   }}
                   style={{
@@ -317,6 +357,105 @@ function SymptomsForm() {
               ))}
             </div>
 
+            {followUpQuestions.length > 0 && (
+              <div className="mt-6 border border-[var(--accent-muted)] bg-[var(--accent-light)] p-4">
+                <div className="mb-4">
+                  <p className="text-[13px] font-semibold text-[var(--accent-dark)]">
+                    Gemini follow-up questions
+                  </p>
+                  <p className="mt-1 text-[12.5px] leading-5 text-[var(--muted)]">
+                    Answer these to make the final triage safer and more specific.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  {followUpQuestions.map((question, index) => (
+                    <label key={question} className="block">
+                      <span className="mb-1 block text-[13px] font-medium text-[var(--ink)]">
+                        {index + 1}. {question}
+                      </span>
+                      <input
+                        className="input-field"
+                        value={followUpAnswers[index] || ""}
+                        onChange={(event) => {
+                          const next = [...followUpAnswers];
+                          next[index] = event.target.value;
+                          setFollowUpAnswers(next);
+                        }}
+                        placeholder="Type answer here"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 border border-[var(--line)] bg-white/70 p-4">
+              <div className="mb-4">
+                <p className="text-[13px] font-semibold text-[var(--ink)]">
+                  Patient context
+                </p>
+                <p className="mt-1 text-[12.5px] leading-5 text-[var(--muted)]">
+                  Optional details that help the triage summary and hospital handoff.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <input
+                  className="input-field"
+                  inputMode="numeric"
+                  placeholder="Age"
+                  value={profile.age ?? ""}
+                  onChange={(event) =>
+                    setProfile((previous) => ({
+                      ...previous,
+                      age: event.target.value ? Number(event.target.value) : undefined,
+                    }))
+                  }
+                />
+                <select
+                  className="input-field"
+                  value={profile.gender || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, gender: event.target.value }))}
+                >
+                  <option value="">Gender</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="other">Other</option>
+                </select>
+                <input
+                  className="input-field"
+                  placeholder="Emergency contact"
+                  value={profile.emergencyContact || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, emergencyContact: event.target.value }))}
+                />
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <input
+                  className="input-field"
+                  placeholder="Known conditions, e.g. diabetes, BP"
+                  value={profile.conditions || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, conditions: event.target.value }))}
+                />
+                <input
+                  className="input-field"
+                  placeholder="Allergies"
+                  value={profile.allergies || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, allergies: event.target.value }))}
+                />
+                <input
+                  className="input-field"
+                  placeholder="Current medicines"
+                  value={profile.medications || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, medications: event.target.value }))}
+                />
+                <input
+                  className="input-field"
+                  placeholder="Pregnancy status, if relevant"
+                  value={profile.pregnancyStatus || ""}
+                  onChange={(event) => setProfile((previous) => ({ ...previous, pregnancyStatus: event.target.value }))}
+                />
+              </div>
+            </div>
+
             {error && (
               <div className="alert alert-danger symptoms-error">{error}</div>
             )}
@@ -339,7 +478,11 @@ function SymptomsForm() {
                   style={{ marginRight: "8px" }}
                 />
               )}
-              {loading ? t("symptoms.analyzing") : t("symptoms.submit")}
+              {loading
+                ? t("symptoms.analyzing")
+                : followUpQuestions.length > 0
+                  ? "Complete final triage"
+                  : t("symptoms.submit")}
               {!loading && <ArrowRight size={16} />}
             </button>
           </div>

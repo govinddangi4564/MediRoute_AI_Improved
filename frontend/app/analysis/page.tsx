@@ -7,9 +7,12 @@ import {
   AlertTriangle,
   ArrowRight,
   ClipboardCheck,
+  Copy,
+  Download,
   FileText,
   HeartPulse,
   MapPin,
+  Share2,
   Stethoscope,
 } from "lucide-react";
 import { AnalysisResult, Severity } from "@/types";
@@ -77,6 +80,31 @@ function localizeEmergencyNumber(value: string) {
   return value.replace(/\b911\b/g, "112");
 }
 
+function buildShareText(analysis: AnalysisResult, symptoms: string | null, reportSummary: ReportSummary | null) {
+  const lines = [
+    "MediRoute AI emergency handoff",
+    `Severity: ${analysis.severity}`,
+    `Emergency level: ${analysis.emergencyLevel}`,
+    `Possible issue: ${analysis.possibleDisease}`,
+    `Department: ${analysis.department}`,
+    symptoms ? `Symptoms: ${symptoms}` : "",
+    analysis.handoffSummary ? `Summary: ${analysis.handoffSummary}` : "",
+    reportSummary ? `Report notes: ${reportSummary.summary}` : "",
+    "Emergency number in India: 112",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AnalysisPage() {
   const { t } = useLang();
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -84,6 +112,7 @@ export default function AnalysisPage() {
     null,
   );
   const router = useRouter();
+  const symptoms = typeof window !== "undefined" ? localStorage.getItem("lifelineSymptoms") : null;
 
   useEffect(() => {
     const storedAnalysis = parseSavedJson<AnalysisResult>("lifelineAnalysis");
@@ -271,6 +300,100 @@ export default function AnalysisPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {analysis && (
+          <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_0.82fr]">
+            <div className="clinical-card-white">
+              <h2 className="flex items-center gap-2 text-[17px] font-semibold text-[var(--ink)]">
+                <ClipboardCheck size={18} className="text-[var(--accent)]" />
+                Follow-up questions
+              </h2>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {(analysis.followUpQuestions || []).map((question, index) => (
+                  <div key={question} className="border border-[var(--line)] bg-[#f8f4eb] p-3">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--earth)]">
+                      Q{index + 1}
+                    </span>
+                    <p className="mt-1 text-[13.5px] leading-6 text-[var(--muted)]">{question}</p>
+                  </div>
+                ))}
+              </div>
+
+              <h2 className="mt-6 flex items-center gap-2 text-[17px] font-semibold text-[var(--ink)]">
+                <HeartPulse size={18} className="text-[var(--danger)]" />
+                Risk timeline
+              </h2>
+              <div className="mt-4 border-l border-[var(--line-strong)] pl-5">
+                {(analysis.riskTimeline || []).map((item, index) => (
+                  <div key={item} className="relative pb-4 last:pb-0">
+                    <span className="absolute -left-[31px] top-0 flex h-6 w-6 items-center justify-center border border-[var(--line-strong)] bg-white text-xs font-semibold text-[var(--ink)]">
+                      {index + 1}
+                    </span>
+                    <p className="text-[13.5px] leading-6 text-[var(--muted)]">{localizeEmergencyNumber(item)}</p>
+                  </div>
+                ))}
+              </div>
+
+              {(analysis.escalationTriggers || []).length > 0 && (
+                <div className="mt-6 border border-[#e7b8af] bg-[var(--red-light)] p-4">
+                  <p className="text-[13px] font-semibold text-[var(--danger)]">Escalate immediately if any of these appear</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(analysis.escalationTriggers || []).map((trigger) => (
+                      <span key={trigger} className="border border-[#e7b8af] bg-white px-3 py-1 text-[12.5px] text-[var(--danger)]">
+                        {trigger}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <aside className="clinical-card-white">
+              <h2 className="flex items-center gap-2 text-[17px] font-semibold text-[var(--ink)]">
+                <FileText size={18} className="text-[var(--accent)]" />
+                Emergency handoff card
+              </h2>
+              <p className="mt-3 whitespace-pre-line border border-[var(--line)] bg-[#f8f4eb] p-4 text-[13.5px] leading-6 text-[var(--muted)]">
+                {analysis.handoffSummary || buildShareText(analysis, symptoms, reportSummary)}
+              </p>
+              <div className="mt-4 grid gap-2">
+                <button
+                  className="btn btn-primary justify-center"
+                  onClick={async () => {
+                    const text = buildShareText(analysis, symptoms, reportSummary);
+                    if (navigator.share) {
+                      await navigator.share({ title: "MediRoute AI handoff", text });
+                    } else {
+                      await navigator.clipboard.writeText(text);
+                    }
+                  }}
+                >
+                  <Share2 size={16} /> Share handoff
+                </button>
+                <button
+                  className="btn btn-outline justify-center"
+                  onClick={() => navigator.clipboard.writeText(buildShareText(analysis, symptoms, reportSummary))}
+                >
+                  <Copy size={16} /> Copy summary
+                </button>
+                <button
+                  className="btn btn-outline justify-center"
+                  onClick={() => downloadTextFile("mediroute-handoff.txt", buildShareText(analysis, symptoms, reportSummary))}
+                >
+                  <Download size={16} /> Download handoff
+                </button>
+                <a
+                  className="btn btn-outline justify-center"
+                  target="_blank"
+                  rel="noreferrer"
+                  href={`https://wa.me/?text=${encodeURIComponent(buildShareText(analysis, symptoms, reportSummary))}`}
+                >
+                  Share on WhatsApp
+                </a>
+              </div>
+            </aside>
           </div>
         )}
 

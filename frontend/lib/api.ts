@@ -1,4 +1,4 @@
-import { AnalysisResult, HospitalRecommendationResponse } from '@/types';
+import { AnalysisResult, HospitalRecommendationResponse, PatientProfile } from '@/types';
 import type { Lang } from '@/contexts/LanguageContext';
 
 const rawApiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:5000/api';
@@ -27,6 +27,9 @@ async function apiRequest<T>(path: string, options: RequestInit): Promise<T> {
 export async function analyzeSymptoms(payload: {
   text: string;
   language: Lang;
+  profile?: PatientProfile;
+  lat?: number;
+  lng?: number;
 }): Promise<AnalysisResult> {
   return apiRequest<AnalysisResult>('/analyze/symptoms', {
     method: 'POST',

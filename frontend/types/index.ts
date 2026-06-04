@@ -1,5 +1,15 @@
 export type Severity = 'low' | 'moderate' | 'high' | 'critical';
 
+export interface PatientProfile {
+  age?: number;
+  gender?: string;
+  conditions?: string;
+  allergies?: string;
+  medications?: string;
+  pregnancyStatus?: string;
+  emergencyContact?: string;
+}
+
 export interface AnalysisResult {
   severity: Severity;
   emergencyLevel: string;
@@ -10,6 +20,11 @@ export interface AnalysisResult {
   firstAid: string[];
   department: string;
   patientId?: string;
+  followUpQuestions?: string[];
+  riskTimeline?: string[];
+  escalationTriggers?: string[];
+  handoffSummary?: string;
+  profile?: PatientProfile;
 }
 
 export interface HospitalRecommendation {
@@ -24,6 +39,8 @@ export interface HospitalRecommendation {
   emergencySuitability: number;
   lat: number;
   lng: number;
+  capabilities?: string[];
+  matchReason?: string;
 }
 
 export interface HospitalRecommendationResponse {

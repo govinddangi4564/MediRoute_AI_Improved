@@ -7,6 +7,20 @@ const patientSchema = new mongoose.Schema({
   emergencyLevel: { type: String },
   possibleDisease: { type: String },
   department: { type: String },
+  confidenceScore: { type: Number, default: 0 },
+  profile: {
+    age: { type: Number },
+    gender: { type: String, default: '' },
+    conditions: { type: String, default: '' },
+    allergies: { type: String, default: '' },
+    medications: { type: String, default: '' },
+    pregnancyStatus: { type: String, default: '' },
+    emergencyContact: { type: String, default: '' }
+  },
+  followUpQuestions: { type: [String], default: [] },
+  riskTimeline: { type: [String], default: [] },
+  escalationTriggers: { type: [String], default: [] },
+  handoffSummary: { type: String, default: '' },
   location: {
     type: { type: String, enum: ['Point'], default: 'Point' },
     coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
