@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { AlertTriangle, Clock, Activity, ExternalLink, Hospital, MapPin, LogOut, Truck } from "lucide-react";
@@ -47,6 +47,8 @@ export default function HospitalDashboard() {
   const [hospitalName, setHospitalName] = useState("Hospital Command Center");
   const [availableBeds, setAvailableBeds] = useState(0);
   const [isUpdatingBeds, setIsUpdatingBeds] = useState(false);
+  
+  const seenEmergencies = useRef<Set<string>>(new Set());
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -89,6 +91,7 @@ export default function HospitalDashboard() {
       .then((data) => {
         if (Array.isArray(data)) {
           setPatients(data);
+          data.forEach(p => seenEmergencies.current.add(p._id));
         }
       })
       .catch((err) => setError("Failed to fetch patients"));
@@ -107,6 +110,9 @@ export default function HospitalDashboard() {
     socket.on("disconnect", () => setIsConnected(false));
 
     socket.on("new_emergency", (patient: Patient) => {
+      if (seenEmergencies.current.has(patient._id)) return;
+      seenEmergencies.current.add(patient._id);
+      
       setPatients((prev) => [patient, ...prev]);
       
       // Play alert sound for new incoming emergency

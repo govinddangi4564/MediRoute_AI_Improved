@@ -152,12 +152,6 @@ export default function HomePage() {
               </button>
             </div>
             
-            <div className="mt-4">
-              <Link href="/hospital/dashboard" className="text-[var(--accent)] hover:underline font-medium flex items-center gap-1 text-sm bg-white/20 px-3 py-2 inline-flex rounded-lg border border-[var(--accent-muted)]">
-                🏥 Open Hospital Command Center Dashboard
-              </Link>
-            </div>
-
             <div className="mt-9 grid max-w-[560px] grid-cols-2 gap-x-6 gap-y-3 border-l border-white/26 pl-4 text-[13px] text-[#eadfce] sm:grid-cols-4">
               {clinicalSignals.map((signal) => (
                 <span key={signal} className="flex items-center gap-2">
