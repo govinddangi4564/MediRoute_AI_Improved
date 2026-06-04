@@ -8,7 +8,6 @@ const hospitalSchema = new mongoose.Schema(
     name: { type: String, required: true },
     normalizedName: { type: String, default: '' },
     rating: { type: Number, default: 4.0 },
-    address: { type: String, default: 'Address unavailable' },
     phone: { type: String, default: '' },
     types: { type: [String], default: [] },
     qualityVersion: { type: Number, default: 1 },

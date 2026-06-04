@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Hospital, Lock, Mail, MapPin } from "lucide-react";
+import { Hospital, LocateFixed, Lock, Mail, MapPin } from "lucide-react";
 import Link from "next/link";
 
 export default function HospitalLogin() {
@@ -10,25 +10,45 @@ export default function HospitalLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [hospitalName, setHospitalName] = useState("");
-  const [address, setAddress] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
   const router = useRouter();
 
-  // Try to get location on mount
-  useState(() => {
+  const captureCurrentLocation = () => {
     if (typeof navigator !== "undefined" && navigator.geolocation) {
+      setLocating(true);
+      setError("");
       navigator.geolocation.getCurrentPosition(
-        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        (err) => console.log("Geolocation error", err)
+        (pos) => {
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setLocating(false);
+        },
+        () => {
+          setError("Please allow location access. Hospital registration needs live location for accurate emergency routing.");
+          setLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
       );
+    } else {
+      setError("Geolocation is not available in this browser.");
     }
-  });
+  };
+
+  useEffect(() => {
+    if (!isLogin) captureCurrentLocation();
+  }, [isLogin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!isLogin && !location) {
+      setError("Capture current hospital location before registering.");
+      return;
+    }
+
     setLoading(true);
 
     const endpoint = isLogin ? "/api/auth/login" : "/api/auth/register";
@@ -38,9 +58,8 @@ export default function HospitalLogin() {
           email, 
           password, 
           hospitalName, 
-          address,
-          lat: location?.lat || 28.6139, // Default to Delhi if blocked
-          lng: location?.lng || 77.2090
+          lat: location!.lat,
+          lng: location!.lng
         };
 
     try {
@@ -110,17 +129,37 @@ export default function HospitalLogin() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-3 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    required
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-[var(--accent)] outline-none"
-                    placeholder="e.g. 123 Main St, Mumbai"
-                  />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Hospital Location</label>
+                <div className="rounded-lg border bg-gray-50 p-3">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="mt-1 text-gray-400" size={18} />
+                    <div className="min-w-0 flex-1">
+                      {location ? (
+                        <>
+                          <p className="text-sm font-semibold text-gray-800">Live location captured</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Lat {location.lat.toFixed(6)}, Lng {location.lng.toFixed(6)}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-gray-800">Location required</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            We store exact coordinates, not a typed address, for accurate routing.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={captureCurrentLocation}
+                    disabled={locating}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--accent)] bg-white px-3 py-2 text-sm font-semibold text-[var(--accent)] hover:bg-[var(--accent-light)] disabled:opacity-60"
+                  >
+                    <LocateFixed size={16} />
+                    {locating ? "Capturing location..." : location ? "Refresh current location" : "Use current location"}
+                  </button>
                 </div>
               </div>
             </>

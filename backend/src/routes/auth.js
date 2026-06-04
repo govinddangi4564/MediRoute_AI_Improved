@@ -10,9 +10,8 @@ router.post('/register', async (req, res) => {
     email: z.string().email(),
     password: z.string().min(6),
     hospitalName: z.string().min(3),
-    address: z.string().min(5),
-    lat: z.number().optional(),
-    lng: z.number().optional()
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180)
   });
 
   const parsed = schema.safeParse(req.body);
@@ -25,10 +24,12 @@ router.post('/register', async (req, res) => {
     }
 
     const userData = {
-      ...parsed.data,
+      email: parsed.data.email,
+      password: parsed.data.password,
+      hospitalName: parsed.data.hospitalName,
       location: {
         type: 'Point',
-        coordinates: [parsed.data.lng || 77.2090, parsed.data.lat || 28.6139] // [longitude, latitude]
+        coordinates: [parsed.data.lng, parsed.data.lat] // [longitude, latitude]
       }
     };
     const user = new HospitalUser(userData);
@@ -91,7 +92,7 @@ router.put('/beds', authenticateToken, async (req, res) => {
       { availableBeds: parsed.data.availableBeds },
       { new: true }
     ).select('-password');
-    
+
     if (!user) return res.status(404).json({ message: 'User not found' });
     return res.json(user);
   } catch (err) {

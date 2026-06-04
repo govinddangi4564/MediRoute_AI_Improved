@@ -5,7 +5,6 @@ const hospitalUserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   hospitalName: { type: String, required: true },
-  address: { type: String, required: true },
   availableBeds: { type: Number, default: 0 },
   location: {
     type: { type: String, enum: ['Point'], default: 'Point' },
