@@ -9,6 +9,7 @@ import { AmbulanceDriver } from '../models/ambulanceDriver.js';
 import { io } from '../server.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { startEmergencyRouting } from '../services/routing.js';
+import { mockEmergencyCall } from '../services/twilio.js';
 
 const router = Router();
 
@@ -138,7 +139,7 @@ router.get('/dashboard/patients', authenticateToken, async (req, res) => {
             }
           }
         },
-        { assignedTo: req.user.id }
+        { status: 'assigned', assignedTo: req.user.id }
       ]
     }).populate('requestedHospital', 'hospitalName').sort({ createdAt: -1 }).limit(50);
     return res.json(patients);
@@ -171,7 +172,8 @@ router.post('/emergency/:id/request', async (req, res) => {
   try {
     const schema = z.object({
       hospitalId: z.string().min(1),
-      hospitalName: z.string().min(2)
+      hospitalName: z.string().min(2),
+      hospitalPhone: z.string().optional()
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: 'Hospital selection is required' });
@@ -191,7 +193,11 @@ router.post('/emergency/:id/request', async (req, res) => {
     if (mongoose.Types.ObjectId.isValid(parsed.data.hospitalId)) {
       io.to(`hospital_${parsed.data.hospitalId}`).emit('new_emergency', populatedPatient);
     } else {
-      startEmergencyRouting(patient._id);
+      // Option 1: Trigger Automated Twilio Call to Unregistered Hospital
+      mockEmergencyCall(parsed.data.hospitalName, parsed.data.hospitalPhone, { symptoms: patient.symptoms });
+      
+      // Option 2: Broadcast to Independent Ambulance Drivers (Uber Model)
+      io.to('driver_independent').emit('independent_mission_broadcast', populatedPatient);
     }
 
     return res.json({ message: 'Medical help request sent successfully', patient: populatedPatient });
@@ -210,7 +216,7 @@ router.post('/emergency/:id/accept', authenticateToken, async (req, res) => {
 
     patient.status = 'assigned';
     patient.assignedTo = req.user.id;
-    await patient.save();
+    await Patient.updateOne({ _id: patient._id }, { $set: { status: 'assigned', assignedTo: req.user.id } });
 
     // Notify all clients to remove this emergency from their feed (or update status)
     io.emit('emergency_accepted', { patientId: patient._id, hospitalId: req.user.id });
@@ -243,7 +249,7 @@ router.post('/emergency/:id/assign-driver', authenticateToken, async (req, res) 
     await driver.save();
 
     patient.assignedAmbulance = parsed.data.driverId;
-    await patient.save();
+    await Patient.updateOne({ _id: patient._id }, { $set: { assignedAmbulance: parsed.data.driverId } });
 
     // Populate patient completely for the driver
     const populatedPatient = await Patient.findById(patient._id).populate('requestedHospital', 'hospitalName');
@@ -268,12 +274,49 @@ router.post('/emergency/:id/admit', authenticateToken, async (req, res) => {
     }
 
     patient.status = 'resolved';
-    await patient.save();
+    await Patient.updateOne({ _id: patient._id }, { $set: { status: 'resolved' } });
 
     return res.json({ message: 'Patient marked as admitted successfully', patient });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'Failed to mark patient as admitted' });
+  }
+});
+
+// Independent Driver Claim Endpoint
+router.post('/emergency/:id/driver-claim', authenticateToken, async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.id);
+    if (!patient) return res.status(404).json({ message: 'Emergency not found' });
+    if (patient.status !== 'pending') return res.status(400).json({ message: 'Emergency already claimed' });
+
+    const driver = await AmbulanceDriver.findById(req.user.id);
+    if (!driver) return res.status(404).json({ message: 'Driver not found' });
+    if (!driver.isAvailable) return res.status(400).json({ message: 'You are already on a mission' });
+
+    driver.isAvailable = false;
+    await driver.save();
+
+    patient.status = 'assigned';
+    patient.assignedAmbulance = req.user.id;
+    await Patient.updateOne({ _id: patient._id }, { $set: { status: 'assigned', assignedAmbulance: req.user.id } });
+
+    // Populate patient completely for the driver
+    const populatedPatient = await Patient.findById(patient._id).populate('requestedHospital', 'hospitalName');
+
+    // Notify the driver that they successfully claimed it
+    io.to(`driver_${req.user.id}`).emit('new_mission', populatedPatient);
+    
+    // Notify all independent drivers to remove it from their boards
+    io.emit('independent_mission_claimed', { patientId: patient._id });
+
+    // Notify the patient
+    io.to(`patient_${patient._id}`).emit('ambulance_dispatched');
+
+    return res.json({ message: 'Mission claimed successfully', patient });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Failed to claim independent mission' });
   }
 });
 

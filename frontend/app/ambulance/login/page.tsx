@@ -36,7 +36,7 @@ export default function AmbulanceLogin() {
     const endpoint = isLogin ? "/api/auth/ambulance/login" : "/api/auth/ambulance/register";
     const body = isLogin 
       ? { email, password }
-      : { email, password, driverName, vehicleNumber, hospitalId };
+      : { email, password, driverName, vehicleNumber, hospitalId: hospitalId || undefined };
 
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${endpoint}`, {
@@ -55,6 +55,7 @@ export default function AmbulanceLogin() {
       localStorage.setItem("driver_token", data.token);
       localStorage.setItem("driver_id", data.user.id);
       localStorage.setItem("driver_name", data.user.driverName);
+      localStorage.setItem("is_independent", String(data.user.isIndependent));
       
       router.push("/ambulance");
     } catch (err: any) {
@@ -121,12 +122,11 @@ export default function AmbulanceLogin() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Hospital</label>
                 <select
-                  required
                   value={hospitalId}
                   onChange={(e) => setHospitalId(e.target.value)}
                   className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 outline-none bg-white"
                 >
-                  <option value="" disabled>-- Choose your hospital --</option>
+                  <option value="">Independent Driver (No Hospital)</option>
                   {hospitals.map(h => (
                     <option key={h._id} value={h._id}>{h.hospitalName}</option>
                   ))}

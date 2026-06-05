@@ -6,7 +6,7 @@ const ambulanceDriverSchema = new mongoose.Schema({
   password: { type: String, required: true },
   driverName: { type: String, required: true },
   vehicleNumber: { type: String, required: true },
-  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser', required: true },
+  hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'HospitalUser' },
   isAvailable: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now }
 });

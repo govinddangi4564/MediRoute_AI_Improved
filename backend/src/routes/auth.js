@@ -117,7 +117,7 @@ router.post('/ambulance/register', async (req, res) => {
     password: z.string().min(6),
     driverName: z.string().min(2),
     vehicleNumber: z.string().min(2),
-    hospitalId: z.string().min(1)
+    hospitalId: z.string().min(1).optional()
   });
 
   const parsed = schema.safeParse(req.body);
@@ -129,8 +129,10 @@ router.post('/ambulance/register', async (req, res) => {
       return res.status(409).json({ message: 'Email already in use' });
     }
 
-    const hospital = await HospitalUser.findById(parsed.data.hospitalId);
-    if (!hospital) return res.status(404).json({ message: 'Hospital not found' });
+    if (parsed.data.hospitalId) {
+      const hospital = await HospitalUser.findById(parsed.data.hospitalId);
+      if (!hospital) return res.status(404).json({ message: 'Hospital not found' });
+    }
 
     const driver = new AmbulanceDriver({
       email: parsed.data.email,
@@ -142,7 +144,7 @@ router.post('/ambulance/register', async (req, res) => {
     await driver.save();
 
     const token = generateToken(driver); 
-    return res.status(201).json({ token, user: { id: driver._id, driverName: driver.driverName, role: 'driver' } });
+    return res.status(201).json({ token, user: { id: driver._id, driverName: driver.driverName, role: 'driver', isIndependent: !driver.hospitalId } });
   } catch (err) {
     console.error('Registration error:', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -166,7 +168,7 @@ router.post('/ambulance/login', async (req, res) => {
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
     const token = generateToken(driver);
-    return res.json({ token, user: { id: driver._id, driverName: driver.driverName, role: 'driver' } });
+    return res.json({ token, user: { id: driver._id, driverName: driver.driverName, role: 'driver', isIndependent: !driver.hospitalId } });
   } catch (err) {
     console.error('Login error:', err);
     return res.status(500).json({ message: 'Internal server error' });

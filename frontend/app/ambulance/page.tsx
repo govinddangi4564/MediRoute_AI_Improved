@@ -24,7 +24,9 @@ export default function AmbulanceDriverView() {
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [mission, setMission] = useState<Mission | null>(null);
+  const [openMissions, setOpenMissions] = useState<Mission[]>([]);
   const [driverName, setDriverName] = useState("");
+  const [isIndependent, setIsIndependent] = useState(false);
   
   const [isDriving, setIsDriving] = useState(false);
   const [arrived, setArrived] = useState(false);
@@ -43,6 +45,8 @@ export default function AmbulanceDriverView() {
     }
 
     setDriverName(localStorage.getItem("driver_name") || "Driver");
+    const independentFlag = localStorage.getItem("is_independent") === "true";
+    setIsIndependent(independentFlag);
 
     // Fetch active mission
     fetch(`${apiUrl}/api/ambulance/mission`, {
@@ -66,7 +70,7 @@ export default function AmbulanceDriverView() {
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
-      newSocket.emit("join_driver_room", driverId);
+      newSocket.emit("join_driver_room", driverId, independentFlag);
     });
 
     newSocket.on("new_mission", (newMission: Mission) => {
@@ -75,6 +79,18 @@ export default function AmbulanceDriverView() {
       
       // Play alert sound for new mission
       playAlertSound();
+    });
+
+    newSocket.on("independent_mission_broadcast", (newMission: Mission) => {
+      setOpenMissions(prev => {
+        if (prev.some(m => m._id === newMission._id)) return prev;
+        return [newMission, ...prev];
+      });
+      playAlertSound();
+    });
+
+    newSocket.on("independent_mission_claimed", ({ patientId }: { patientId: string }) => {
+      setOpenMissions(prev => prev.filter(m => m._id !== patientId));
     });
 
     return () => {
@@ -134,7 +150,26 @@ export default function AmbulanceDriverView() {
   const handleLogout = () => {
     localStorage.removeItem("driver_token");
     localStorage.removeItem("driver_id");
+    localStorage.removeItem("driver_name");
+    localStorage.removeItem("is_independent");
     router.push("/ambulance/login");
+  };
+
+  const claimMission = async (patientId: string) => {
+    const token = localStorage.getItem("driver_token");
+    try {
+      const res = await fetch(`${apiUrl}/api/emergency/${patientId}/driver-claim`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message);
+      
+      setOpenMissions(prev => prev.filter(m => m._id !== patientId));
+      setMission(data.patient);
+    } catch (err: any) {
+      alert(err.message || "Failed to claim mission");
+    }
   };
 
   const targetLat = mission?.location?.coordinates[1] || null;
@@ -154,10 +189,44 @@ export default function AmbulanceDriverView() {
 
       <div className="bg-white border rounded-2xl p-6 shadow-xl max-w-md w-full">
         {!mission ? (
-          <div className="text-center py-10">
-            <Activity className="mx-auto text-gray-300 mb-4 animate-pulse" size={48} />
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Standby</h2>
-            <p className="text-gray-500 text-sm">Waiting for hospital dispatch...</p>
+          <div className="py-6">
+            <div className="text-center mb-6">
+              <Activity className="mx-auto text-gray-300 mb-2 animate-pulse" size={40} />
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Standby</h2>
+              <p className="text-gray-500 text-sm">
+                {isIndependent ? "Waiting for nearby emergency broadcasts..." : "Waiting for hospital dispatch..."}
+              </p>
+            </div>
+
+            {isIndependent && openMissions.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-gray-900 border-b pb-2">Nearby Open Requests</h3>
+                {openMissions.map((openMission) => (
+                  <div key={openMission._id} className="bg-red-50 border border-red-100 rounded-xl p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="bg-red-100 text-red-600 text-xs font-bold px-2 py-1 rounded">
+                        {openMission.emergencyLevel || "Emergency"}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {new Date(openMission.createdAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-900 mb-1">{openMission.symptoms}</p>
+                    {openMission.requestedHospital && (
+                      <p className="text-xs text-gray-600 mb-3">
+                        Destination: <span className="font-semibold">{openMission.requestedHospital.hospitalName}</span>
+                      </p>
+                    )}
+                    <button 
+                      onClick={() => claimMission(openMission._id)}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition-colors text-sm"
+                    >
+                      Accept Mission
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <>

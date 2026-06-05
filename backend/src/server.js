@@ -58,9 +58,12 @@ io.on('connection', (socket) => {
     socket.join(`patient_${patientId}`);
   });
 
-  socket.on('join_driver_room', (driverId) => {
-    console.log(`Driver ${driverId} joined driver room`);
+  socket.on('join_driver_room', (driverId, isIndependent) => {
+    console.log(`Driver ${driverId} joined driver room. Independent: ${isIndependent}`);
     socket.join(`driver_${driverId}`);
+    if (isIndependent) {
+      socket.join('driver_independent');
+    }
   });
 
   // From ambulance driver app

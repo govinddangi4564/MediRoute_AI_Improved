@@ -127,7 +127,7 @@ export default function HospitalsPage() {
     
     setIsRequesting(true);
     try {
-      await requestMedicalHelp(analysisResult.patientId, selectedHospital.id, selectedHospital.name);
+      await requestMedicalHelp(analysisResult.patientId, selectedHospital.id, selectedHospital.name, selectedHospital.phone);
       setRequestedHospitalName(selectedHospital.name);
     } catch (err) {
       console.error(err);
